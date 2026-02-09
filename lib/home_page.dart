@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
+import 'dart:convert';
+import 'package:http/http.dart' as http;
 import 'settings_page.dart';
+import 'about_page.dart'; // Import the AboutPage
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -9,6 +12,8 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
+  // ================== STATE VARIABLES ==================
+  int _selectedIndex = 0; // For bottom navigation
   String userName = "John Doe";
   String taxId = "CM-TX-4589";
   bool isOnline = true;
@@ -19,6 +24,26 @@ class _HomePageState extends State<HomePage> {
     {"title": "Location shared", "time": "Yesterday • 6:12 PM"},
   ];
 
+  // ================== API CALL ==================
+  Future<void> sendEmergency() async {
+    try {
+      final response = await http.post(
+        Uri.parse('http://10.0.2.2:3000/api/taxi/emergency'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'taxiId': taxId}),
+      );
+
+      if (response.statusCode == 200) {
+        print("Emergency sent successfully");
+      } else {
+        print("Failed to send emergency");
+      }
+    } catch (e) {
+      print("Error: $e");
+    }
+  }
+
+  // ================== EMERGENCY ALERT ==================
   void sendEmergencyAlert() {
     setState(() {
       isInDanger = true;
@@ -28,6 +53,8 @@ class _HomePageState extends State<HomePage> {
       });
     });
 
+    sendEmergency(); // Call backend API
+
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
         content: Text("Emergency alert sent to nearby taxmen"),
@@ -36,11 +63,45 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
+  // ================== BOTTOM NAVIGATION ==================
+  final List<Widget> _pages = []; // Will initialize in initState
+
+  @override
+  void initState() {
+    super.initState();
+    _pages.addAll([
+      _homeContent(), // Home tab
+      const AboutPage(), // About tab
+    ]);
+  }
+
+  void _onTabSelected(int index) {
+    setState(() {
+      _selectedIndex = index;
+    });
+  }
+
+  // ================== BUILD ==================
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.yellow.shade100,
+      body: _pages[_selectedIndex], // Show selected tab
+      bottomNavigationBar: BottomNavigationBar(
+        currentIndex: _selectedIndex,
+        selectedItemColor: Colors.black,
+        onTap: _onTabSelected,
+        items: const [
+          BottomNavigationBarItem(icon: Icon(Icons.home), label: "Home"),
+          BottomNavigationBarItem(icon: Icon(Icons.info), label: "About"),
+        ],
+      ),
+    );
+  }
 
+  // ================== HOME CONTENT ==================
+  Widget _homeContent() {
+    return Scaffold(
+      backgroundColor: Colors.yellow.shade100,
       appBar: AppBar(
         backgroundColor: Colors.black,
         title: const Text("Taximan Dashboard"),
@@ -57,7 +118,6 @@ class _HomePageState extends State<HomePage> {
           ),
         ],
       ),
-
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -68,7 +128,6 @@ class _HomePageState extends State<HomePage> {
               "Welcome, $userName 👋",
               style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
             ),
-
             const SizedBox(height: 10),
 
             // 🟢 STATUS BANNER
@@ -82,26 +141,25 @@ class _HomePageState extends State<HomePage> {
                 children: [
                   const Icon(Icons.location_on, color: Colors.white),
                   const SizedBox(width: 10),
-                  Text(
-                    isInDanger
-                        ? "You are in danger – help is on the way"
-                        : "You are safe and visible to nearby taxmen",
-                    style: const TextStyle(color: Colors.white),
+                  Expanded(
+                    child: Text(
+                      isInDanger
+                          ? "You are in danger – help is on the way"
+                          : "You are safe and visible to nearby taxmen",
+                      style: const TextStyle(color: Colors.white),
+                    ),
                   ),
                 ],
               ),
             ),
-
             const SizedBox(height: 20),
 
             // 👤 PROFILE CARD
             _profileCard(),
-
             const SizedBox(height: 20),
 
             // 🚨 EMERGENCY BUTTON
             _emergencyButton(),
-
             const SizedBox(height: 20),
 
             // ⚡ QUICK ACTIONS
@@ -110,7 +168,6 @@ class _HomePageState extends State<HomePage> {
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 10),
-
             GridView.count(
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
@@ -124,7 +181,6 @@ class _HomePageState extends State<HomePage> {
                 _quickAction(Icons.support_agent, "Request Assistance"),
               ],
             ),
-
             const SizedBox(height: 20),
 
             // 📜 ACTIVITY HISTORY
@@ -132,21 +188,10 @@ class _HomePageState extends State<HomePage> {
           ],
         ),
       ),
-
-      bottomNavigationBar: BottomNavigationBar(
-        selectedItemColor: Colors.black,
-        items: const [
-          BottomNavigationBarItem(icon: Icon(Icons.home), label: "Home"),
-          BottomNavigationBarItem(icon: Icon(Icons.warning), label: "Alerts"),
-          BottomNavigationBarItem(icon: Icon(Icons.history), label: "History"),
-          BottomNavigationBarItem(icon: Icon(Icons.person), label: "Profile"),
-        ],
-      ),
     );
   }
 
   // ================== WIDGETS ==================
-
   Widget _profileCard() {
     return Container(
       padding: const EdgeInsets.all(16),

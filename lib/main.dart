@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 
-// Import your pages
 import 'login_page.dart';
 import 'register_page.dart';
+import 'home_page.dart';
 
 void main() {
   runApp(const MyApp());
@@ -17,13 +17,14 @@ class MyApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       title: 'Taxi Safety App',
       theme: ThemeData(primaryColor: Colors.yellow),
-      // Define routes
+
+      // In main.dart
       routes: {
-        '/': (context) => const LoginPage(),
-        '/register': (context) => const RegisterPage(),
+        '/login': (_) => const LoginPage(),
+        '/register': (_) => const RegisterPage(),
+        '/home': (_) => const HomePage(),
       },
-      // App starts here
-      initialRoute: '/',
+      initialRoute: '/login',
     );
   }
 }

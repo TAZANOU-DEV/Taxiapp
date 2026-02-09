@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'register_page.dart';
-import 'home_page.dart'; // ✅ IMPORT HOME PAGE
+import 'home_page.dart';
 
 class LoginPage extends StatelessWidget {
   const LoginPage({super.key});
@@ -22,7 +22,6 @@ class LoginPage extends StatelessWidget {
 
               const SizedBox(height: 30),
 
-              // Tax Number
               TextField(
                 decoration: InputDecoration(
                   labelText: "Taxi Number",
@@ -36,7 +35,6 @@ class LoginPage extends StatelessWidget {
 
               const SizedBox(height: 20),
 
-              // Password
               TextField(
                 obscureText: true,
                 decoration: InputDecoration(
@@ -51,7 +49,6 @@ class LoginPage extends StatelessWidget {
 
               const SizedBox(height: 30),
 
-              // LOGIN BUTTON
               SizedBox(
                 width: double.infinity,
                 height: 50,
@@ -60,7 +57,6 @@ class LoginPage extends StatelessWidget {
                     backgroundColor: Colors.black,
                   ),
                   onPressed: () {
-                    // ✅ TEMPORARY LOGIN (later replace with Firebase/Auth logic)
                     Navigator.pushReplacement(
                       context,
                       MaterialPageRoute(builder: (context) => const HomePage()),
@@ -75,7 +71,6 @@ class LoginPage extends StatelessWidget {
 
               const SizedBox(height: 20),
 
-              // Register link
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [

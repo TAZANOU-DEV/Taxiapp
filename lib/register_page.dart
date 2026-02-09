@@ -21,7 +21,6 @@ class RegisterPage extends StatelessWidget {
 
               const SizedBox(height: 30),
 
-              // Full Name
               TextField(
                 decoration: InputDecoration(
                   labelText: "Full Name",
@@ -35,7 +34,6 @@ class RegisterPage extends StatelessWidget {
 
               const SizedBox(height: 15),
 
-              // Tax Number
               TextField(
                 decoration: InputDecoration(
                   labelText: "Taxi Number",
@@ -49,7 +47,6 @@ class RegisterPage extends StatelessWidget {
 
               const SizedBox(height: 15),
 
-              // Phone Number
               TextField(
                 keyboardType: TextInputType.phone,
                 decoration: InputDecoration(
@@ -64,7 +61,6 @@ class RegisterPage extends StatelessWidget {
 
               const SizedBox(height: 15),
 
-              // Password
               TextField(
                 obscureText: true,
                 decoration: InputDecoration(
@@ -79,7 +75,6 @@ class RegisterPage extends StatelessWidget {
 
               const SizedBox(height: 15),
 
-              // Confirm Password
               TextField(
                 obscureText: true,
                 decoration: InputDecoration(
@@ -94,7 +89,6 @@ class RegisterPage extends StatelessWidget {
 
               const SizedBox(height: 30),
 
-              // Register Button
               SizedBox(
                 width: double.infinity,
                 height: 50,
@@ -102,9 +96,7 @@ class RegisterPage extends StatelessWidget {
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.black,
                   ),
-                  onPressed: () {
-                    // TODO: registration logic
-                  },
+                  onPressed: () {},
                   child: const Text(
                     "REGISTER",
                     style: TextStyle(color: Colors.white, fontSize: 18),
@@ -114,7 +106,6 @@ class RegisterPage extends StatelessWidget {
 
               const SizedBox(height: 20),
 
-              // Back to Login
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
