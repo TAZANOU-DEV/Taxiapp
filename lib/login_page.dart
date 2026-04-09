@@ -2,8 +2,58 @@ import 'package:flutter/material.dart';
 import 'register_page.dart';
 import 'home_page.dart';
 
-class LoginPage extends StatelessWidget {
+class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
+
+  @override
+  State<LoginPage> createState() => _LoginPageState();
+}
+
+class _LoginPageState extends State<LoginPage> {
+  final TextEditingController _matriculeController = TextEditingController();
+  final TextEditingController _passwordController = TextEditingController();
+  String? _matriculeError;
+
+  // Cameroon taxi matricule regex pattern: XX 1234 Y
+  // Region code (2 letters) + Space + Number (3-4 digits) + Space + Letter
+  bool _isValidMatricule(String matricule) {
+    final RegExp cameroonPattern = RegExp(r'^[A-Z]{2}\s\d{3,4}\s[A-Z]$');
+    return cameroonPattern.hasMatch(matricule);
+  }
+
+  void _validateAndLogin() {
+    final matricule = _matriculeController.text.trim();
+
+    if (matricule.isEmpty) {
+      setState(() {
+        _matriculeError = 'Taxi Matricule is required';
+      });
+      return;
+    }
+
+    if (!_isValidMatricule(matricule)) {
+      setState(() {
+        _matriculeError = 'Invalid format. Use: XX 1234 Y\nExample: CE 4587 A';
+      });
+      return;
+    }
+
+    if (_passwordController.text.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Password is required')),
+      );
+      return;
+    }
+
+    // Proceed with login
+    setState(() {
+      _matriculeError = null;
+    });
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(builder: (context) => const HomePage()),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -23,19 +73,34 @@ class LoginPage extends StatelessWidget {
               const SizedBox(height: 30),
 
               TextField(
+                controller: _matriculeController,
                 decoration: InputDecoration(
-                  labelText: "Taxi Number",
+                  labelText: "Taxi Matricule",
+                  hintText: "e.g., CE 4587 A",
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(10),
                   ),
                   filled: true,
                   fillColor: Colors.white,
+                  errorText: _matriculeError,
+                  errorBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: const BorderSide(color: Colors.red, width: 2),
+                  ),
                 ),
+                onChanged: (_) {
+                  if (_matriculeError != null) {
+                    setState(() {
+                      _matriculeError = null;
+                    });
+                  }
+                },
               ),
 
               const SizedBox(height: 20),
 
               TextField(
+                controller: _passwordController,
                 obscureText: true,
                 decoration: InputDecoration(
                   labelText: "Password",
@@ -47,6 +112,13 @@ class LoginPage extends StatelessWidget {
                 ),
               ),
 
+              const SizedBox(height: 10),
+
+              Text(
+                "Format: Region Code (2 letters) + Space + Number (3-4 digits) + Space + Letter",
+                style: TextStyle(fontSize: 12, color: Colors.black.withValues(alpha: 0.7)),
+              ),
+
               const SizedBox(height: 30),
 
               SizedBox(
@@ -56,12 +128,7 @@ class LoginPage extends StatelessWidget {
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.black,
                   ),
-                  onPressed: () {
-                    Navigator.pushReplacement(
-                      context,
-                      MaterialPageRoute(builder: (context) => const HomePage()),
-                    );
-                  },
+                  onPressed: _validateAndLogin,
                   child: const Text(
                     "LOGIN",
                     style: TextStyle(color: Colors.white, fontSize: 18),
@@ -99,5 +166,12 @@ class LoginPage extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  @override
+  void dispose() {
+    _matriculeController.dispose();
+    _passwordController.dispose();
+    super.dispose();
   }
 }

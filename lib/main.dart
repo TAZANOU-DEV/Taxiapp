@@ -3,8 +3,13 @@ import 'package:flutter/material.dart';
 import 'login_page.dart';
 import 'register_page.dart';
 import 'home_page.dart';
+import 'notification.dart';
+import 'chat_page.dart';
+import 'notification_page.dart';
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await NotificationService.initialize();
   runApp(const MyApp());
 }
 
@@ -23,6 +28,8 @@ class MyApp extends StatelessWidget {
         '/login': (_) => const LoginPage(),
         '/register': (_) => const RegisterPage(),
         '/home': (_) => const HomePage(),
+        '/chat': (_) => const ChatPage(),
+        '/notifications': (_) => const NotificationPage(),
       },
       initialRoute: '/login',
     );
