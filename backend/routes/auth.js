@@ -89,19 +89,31 @@ router.post('/register', async (req, res) => {
   }
 });
 
-// Login user
+// Login user by matricule
 router.post('/login', async (req, res) => {
   try {
-    const { email, password } = req.body;
+    const { matricule, password } = req.body;
 
-    if (!email || !password) {
-      return res.status(400).json({ error: 'Email and password are required' });
+    if (!matricule || !password) {
+      return res.status(400).json({ error: 'Matricule and password are required' });
     }
 
-    // Find user
+    // Find taxi by matricule (license_plate)
+    const [taxis] = await db.query(
+      'SELECT driver_name FROM taxis WHERE license_plate = ?',
+      [matricule]
+    );
+
+    if (taxis.length === 0) {
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+
+    const driverName = taxis[0].driver_name;
+
+    // Find user by username (assuming driver_name is username)
     const [users] = await db.query(
-      'SELECT id, username, email, password_hash, role FROM users WHERE email = ? AND is_active = true',
-      [email]
+      'SELECT id, username, email, password_hash, role FROM users WHERE username = ? AND is_active = true',
+      [driverName]
     );
 
     if (users.length === 0) {

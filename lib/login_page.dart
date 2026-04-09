@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'register_page.dart';
 import 'home_page.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -10,18 +13,62 @@ class LoginPage extends StatefulWidget {
 }
 
 class _LoginPageState extends State<LoginPage> {
+  final String baseUrl = 'http://10.0.2.2:3000'; // For Android emulator, use 10.0.2.2 for localhost
   final TextEditingController _matriculeController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
   String? _matriculeError;
+  bool _rememberMe = false;
 
-  // Cameroon taxi matricule regex pattern: XX 1234 Y
-  // Region code (2 letters) + Space + Number (3-4 digits) + Space + Letter
-  bool _isValidMatricule(String matricule) {
-    final RegExp cameroonPattern = RegExp(r'^[A-Z]{2}\s\d{3,4}\s[A-Z]$');
-    return cameroonPattern.hasMatch(matricule);
+  @override
+  void initState() {
+    super.initState();
+    _loadSavedCredentials();
   }
 
-  void _validateAndLogin() {
+  Future<void> _loadSavedCredentials() async {
+    final prefs = await SharedPreferences.getInstance();
+    final savedMatricule = prefs.getString('matricule');
+    final savedPassword = prefs.getString('password');
+    final remember = prefs.getBool('remember_me') ?? false;
+
+    if (remember && savedMatricule != null && savedPassword != null) {
+      _matriculeController.text = savedMatricule;
+      _passwordController.text = savedPassword;
+      _rememberMe = true;
+    }
+  }
+
+  // Enhanced matricule validation with specific error messages
+  String? _validateMatricule(String matricule) {
+    if (matricule.isEmpty) {
+      return 'Taxi Matricule is required';
+    }
+
+    List<String> parts = matricule.split(' ');
+    if (parts.length != 3) {
+      return 'Format must be: XX 1234 Y (3 parts separated by spaces)\nExample: CE 4587 A';
+    }
+
+    String region = parts[0];
+    String number = parts[1];
+    String letter = parts[2];
+
+    if (!RegExp(r'^[A-Z]{2}$').hasMatch(region)) {
+      return 'Region code must be exactly 2 uppercase letters (e.g., CE, LT, OU)';
+    }
+
+    if (!RegExp(r'^\d{3,4}$').hasMatch(number)) {
+      return 'Number must be 3 or 4 digits (e.g., 123, 1234)';
+    }
+
+    if (!RegExp(r'^[A-Z]$').hasMatch(letter)) {
+      return 'Last part must be 1 uppercase letter (e.g., A, B, C)';
+    }
+
+    return null; // Valid matricule
+  }
+
+  void _validateAndLogin() async {
     final matricule = _matriculeController.text.trim();
 
     if (matricule.isEmpty) {
@@ -31,9 +78,10 @@ class _LoginPageState extends State<LoginPage> {
       return;
     }
 
-    if (!_isValidMatricule(matricule)) {
+    String? matriculeValidation = _validateMatricule(matricule);
+    if (matriculeValidation != null) {
       setState(() {
-        _matriculeError = 'Invalid format. Use: XX 1234 Y\nExample: CE 4587 A';
+        _matriculeError = matriculeValidation;
       });
       return;
     }
@@ -45,14 +93,61 @@ class _LoginPageState extends State<LoginPage> {
       return;
     }
 
-    // Proceed with login
-    setState(() {
-      _matriculeError = null;
-    });
-    Navigator.pushReplacement(
-      context,
-      MaterialPageRoute(builder: (context) => const HomePage()),
-    );
+    // Make API call to backend
+    try {
+      print('Attempting login with matricule: $matricule');
+      final response = await http.post(
+        Uri.parse('$baseUrl/auth/login'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'matricule': matricule,
+          'password': _passwordController.text,
+        }),
+      );
+
+      print('Response status: ${response.statusCode}');
+      print('Response body: ${response.body}');
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['success']) {
+          // Save token and user data
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setString('token', data['token']);
+          await prefs.setString('user', jsonEncode(data['user']));
+
+          // Save credentials if remember me is checked
+          if (_rememberMe) {
+            await prefs.setString('matricule', matricule);
+            await prefs.setString('password', _passwordController.text);
+            await prefs.setBool('remember_me', true);
+          } else {
+            // Clear saved data if not remembering
+            await prefs.remove('matricule');
+            await prefs.remove('password');
+            await prefs.setBool('remember_me', false);
+          }
+
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: (context) => const HomePage()),
+          );
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(data['error'] ?? 'Login failed')),
+          );
+        }
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Server error. Please try again.')),
+        );
+      }
+    } catch (e) {
+      print('Login error: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Network error: $e')),
+      );
+    }
   }
 
   @override
@@ -110,6 +205,22 @@ class _LoginPageState extends State<LoginPage> {
                   filled: true,
                   fillColor: Colors.white,
                 ),
+              ),
+
+              const SizedBox(height: 10),
+
+              Row(
+                children: [
+                  Checkbox(
+                    value: _rememberMe,
+                    onChanged: (value) {
+                      setState(() {
+                        _rememberMe = value ?? false;
+                      });
+                    },
+                  ),
+                  const Text("Remember me"),
+                ],
               ),
 
               const SizedBox(height: 10),

@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import 'login_page.dart';
+import 'home_page.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
 
 class RegisterPage extends StatefulWidget {
   const RegisterPage({super.key});
@@ -9,7 +12,9 @@ class RegisterPage extends StatefulWidget {
 }
 
 class _RegisterPageState extends State<RegisterPage> {
+  final String baseUrl = 'http://10.0.2.2:3000'; // For Android emulator
   final TextEditingController _nameController = TextEditingController();
+  final TextEditingController _emailController = TextEditingController();
   final TextEditingController _matriculeController = TextEditingController();
   final TextEditingController _phoneController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
@@ -17,14 +22,39 @@ class _RegisterPageState extends State<RegisterPage> {
 
   String? _matriculeError;
 
-  // Cameroon taxi matricule regex pattern: XX 1234 Y
-  bool _isValidMatricule(String matricule) {
-    final RegExp cameroonPattern = RegExp(r'^[A-Z]{2}\s\d{3,4}\s[A-Z]$');
-    return cameroonPattern.hasMatch(matricule);
+  // Enhanced matricule validation with specific error messages
+  String? _validateMatricule(String matricule) {
+    if (matricule.isEmpty) {
+      return 'Taxi Matricule is required';
+    }
+
+    List<String> parts = matricule.split(' ');
+    if (parts.length != 3) {
+      return 'Format must be: XX 1234 Y (3 parts separated by spaces)\nExample: CE 4587 A';
+    }
+
+    String region = parts[0];
+    String number = parts[1];
+    String letter = parts[2];
+
+    if (!RegExp(r'^[A-Z]{2}$').hasMatch(region)) {
+      return 'Region code must be exactly 2 uppercase letters (e.g., CE, LT, OU)';
+    }
+
+    if (!RegExp(r'^\d{3,4}$').hasMatch(number)) {
+      return 'Number must be 3 or 4 digits (e.g., 123, 1234)';
+    }
+
+    if (!RegExp(r'^[A-Z]$').hasMatch(letter)) {
+      return 'Last part must be 1 uppercase letter (e.g., A, B, C)';
+    }
+
+    return null; // Valid matricule
   }
 
-  void _validateAndRegister() {
+  void _validateAndRegister() async {
     final name = _nameController.text.trim();
+    final email = _emailController.text.trim();
     final matricule = _matriculeController.text.trim();
     final phone = _phoneController.text.trim();
     final password = _passwordController.text;
@@ -36,6 +66,11 @@ class _RegisterPageState extends State<RegisterPage> {
       return;
     }
 
+    if (email.isEmpty || !email.contains('@')) {
+      _showError('Valid email is required');
+      return;
+    }
+
     if (matricule.isEmpty) {
       setState(() {
         _matriculeError = 'Taxi Matricule is required';
@@ -43,9 +78,10 @@ class _RegisterPageState extends State<RegisterPage> {
       return;
     }
 
-    if (!_isValidMatricule(matricule)) {
+    String? matriculeValidation = _validateMatricule(matricule);
+    if (matriculeValidation != null) {
       setState(() {
-        _matriculeError = 'Invalid format. Use: XX 1234 Y\nExample: CE 4587 A';
+        _matriculeError = matriculeValidation;
       });
       return;
     }
@@ -65,14 +101,41 @@ class _RegisterPageState extends State<RegisterPage> {
       return;
     }
 
-    // Registration successful
-    _showSuccess('Registration successful! Please log in.');
-    Future.delayed(const Duration(seconds: 2), () {
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (context) => const LoginPage()),
+    // Make API call to backend
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/auth/register'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'username': name,
+          'email': email,
+          'password': password,
+          'role': 'driver',
+          'phone': phone,
+          'vehicleModel': 'Taxi',
+          'licensePlate': matricule,
+        }),
       );
-    });
+
+      if (response.statusCode == 201) {
+        final data = jsonDecode(response.body);
+        if (data['success']) {
+          _showSuccess('Registration successful! Welcome.');
+          Future.delayed(const Duration(seconds: 2), () {
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(builder: (context) => const HomePage()),
+            );
+          });
+        } else {
+          _showError(data['error'] ?? 'Registration failed');
+        }
+      } else {
+        _showError('Server error. Please try again.');
+      }
+    } catch (e) {
+      _showError('Network error: $e');
+    }
   }
 
   void _showError(String message) {
@@ -114,6 +177,20 @@ class _RegisterPageState extends State<RegisterPage> {
                 controller: _nameController,
                 decoration: InputDecoration(
                   labelText: "Full Name",
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  filled: true,
+                  fillColor: Colors.white,
+                ),
+              ),
+
+              const SizedBox(height: 15),
+
+              TextField(
+                controller: _emailController,
+                decoration: InputDecoration(
+                  labelText: "Email",
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(10),
                   ),
