@@ -28,6 +28,25 @@ router.post('/location', asyncHandler(async (req, res) => {
 
   await db.query(sql, [taxiId, lat, lng]);
 
+  // Mirror location into legacy `drivers` table when possible (drivers.taxi_matricule matches taxis.license_plate)
+  try {
+    await db.query(
+      `
+      UPDATE drivers d
+      JOIN taxis t ON d.taxi_matricule = t.license_plate
+      SET
+        d.last_latitude = ?,
+        d.last_longitude = ?,
+        d.is_online = 1,
+        d.updated_at = CURRENT_TIMESTAMP
+      WHERE t.taxi_id = ?
+      `,
+      [lat, lng, taxiId]
+    );
+  } catch (e) {
+    // Ignore if `drivers` table doesn't exist.
+  }
+
   // Log activity
   await db.query(
     'INSERT INTO activities (taxi_id, title, type) VALUES (?, ?, ?)',

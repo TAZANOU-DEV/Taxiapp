@@ -1,4 +1,5 @@
-require('dotenv').config();
+const path = require('path');
+require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 const db = require('../db');
 const bcrypt = require('bcryptjs');
 
@@ -89,6 +90,26 @@ const initDatabase = async () => {
       )
     `);
     console.log('✅ Users table created');
+
+    // Create legacy drivers table (optional compatibility; some setups use it separately from `users`)
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS drivers (
+        driver_id INT NOT NULL AUTO_INCREMENT,
+        full_name VARCHAR(100) NOT NULL,
+        email VARCHAR(250) NOT NULL,
+        taxi_matricule VARCHAR(20) NOT NULL,
+        phone_number VARCHAR(20) DEFAULT NULL,
+        password VARCHAR(255) NOT NULL,
+        is_online TINYINT(1) DEFAULT '1',
+        last_latitude DECIMAL(10,7) DEFAULT NULL,
+        last_longitude DECIMAL(10,7) DEFAULT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        PRIMARY KEY (driver_id),
+        UNIQUE KEY taxi_number (taxi_matricule)
+      )
+    `);
+    console.log('✅ Drivers table created');
 
     // Add profile_image column if it doesn't exist (for existing databases)
     try {

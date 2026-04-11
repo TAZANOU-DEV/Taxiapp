@@ -43,14 +43,17 @@ router.post('/register', async (req, res) => {
   try {
     const { username, email, password, role = 'driver', phone, vehicleModel, licensePlate } = req.body;
 
-    if (!username || !email || !password) {
+    const normalizedEmail = typeof email === 'string' ? email.trim().toLowerCase() : '';
+    const normalizedUsername = typeof username === 'string' ? username.trim() : '';
+
+    if (!normalizedUsername || !normalizedEmail || !password) {
       return res.status(400).json({ error: 'Username, email, and password are required' });
     }
 
     // Check if user already exists
     const [existing] = await db.query(
       'SELECT id FROM users WHERE email = ? OR username = ?',
-      [email, username]
+      [normalizedEmail, normalizedUsername]
     );
 
     if (existing.length > 0) {
@@ -64,7 +67,7 @@ router.post('/register', async (req, res) => {
     // Insert user
     const [result] = await db.query(
       'INSERT INTO users (username, email, password_hash, role) VALUES (?, ?, ?, ?)',
-      [username, email, passwordHash, role]
+      [normalizedUsername, normalizedEmail, passwordHash, role]
     );
 
     const userId = result.insertId;
@@ -73,9 +76,31 @@ router.post('/register', async (req, res) => {
     if (role === 'driver' && vehicleModel && licensePlate) {
       const taxiId = `TX-${userId.toString().padStart(4, '0')}`;
       await db.query(
-        'INSERT INTO taxis (taxi_id, vehicle_model, license_plate, driver_name, phone) VALUES (?, ?, ?, ?, ?)',
-        [taxiId, vehicleModel, licensePlate, username, phone]
+        // lat/lng are required in the current schema; default to 0 until the driver sends location updates.
+        'INSERT INTO taxis (taxi_id, lat, lng, is_online, vehicle_model, license_plate, driver_name, phone) VALUES (?, 0, 0, false, ?, ?, ?, ?)',
+        [taxiId, vehicleModel, licensePlate, normalizedUsername, phone]
       );
+
+      // Mirror driver profile into legacy `drivers` table (if present in your DB).
+      // Auth still uses `users` as source of truth.
+      try {
+        await db.query(
+          `
+          INSERT INTO drivers (full_name, email, taxi_matricule, phone_number, password, is_online)
+          VALUES (?, ?, ?, ?, ?, 0) AS new
+          ON DUPLICATE KEY UPDATE
+            full_name = new.full_name,
+            email = new.email,
+            phone_number = new.phone_number,
+            password = new.password,
+            is_online = new.is_online,
+            updated_at = CURRENT_TIMESTAMP
+          `,
+          [normalizedUsername, normalizedEmail, licensePlate, phone || null, passwordHash]
+        );
+      } catch (e) {
+        console.warn('Drivers table insert skipped:', e.message);
+      }
     }
 
     res.status(201).json({
@@ -89,31 +114,20 @@ router.post('/register', async (req, res) => {
   }
 });
 
-// Login user by matricule
+// Login user by email + password
 router.post('/login', async (req, res) => {
   try {
-    const { matricule, password } = req.body;
+    const { email, password } = req.body;
 
-    if (!matricule || !password) {
-      return res.status(400).json({ error: 'Matricule and password are required' });
+    const normalizedEmail = typeof email === 'string' ? email.trim().toLowerCase() : '';
+
+    if (!normalizedEmail || !password) {
+      return res.status(400).json({ error: 'Email and password are required' });
     }
 
-    // Find taxi by matricule (license_plate)
-    const [taxis] = await db.query(
-      'SELECT driver_name FROM taxis WHERE license_plate = ?',
-      [matricule]
-    );
-
-    if (taxis.length === 0) {
-      return res.status(401).json({ error: 'Invalid credentials' });
-    }
-
-    const driverName = taxis[0].driver_name;
-
-    // Find user by username (assuming driver_name is username)
     const [users] = await db.query(
-      'SELECT id, username, email, password_hash, role FROM users WHERE username = ? AND is_active = true',
-      [driverName]
+      'SELECT id, username, email, password_hash, role FROM users WHERE email = ?',
+      [normalizedEmail]
     );
 
     if (users.length === 0) {

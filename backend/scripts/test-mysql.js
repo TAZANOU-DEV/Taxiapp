@@ -5,7 +5,8 @@
  * Tests if MySQL is running and accessible with your configuration
  */
 
-require('dotenv').config();
+const path = require('path');
+require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 const mysql = require('mysql2/promise');
 
 const config = {

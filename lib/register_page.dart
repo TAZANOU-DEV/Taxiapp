@@ -1,8 +1,9 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'login_page.dart';
-import 'home_page.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'login_page.dart';
+import 'home_page.dart';
 
 class RegisterPage extends StatefulWidget {
   const RegisterPage({super.key});
@@ -12,13 +13,20 @@ class RegisterPage extends StatefulWidget {
 }
 
 class _RegisterPageState extends State<RegisterPage> {
-  final String baseUrl = 'http://10.0.2.2:3000'; // For Android emulator
+  String get baseUrl {
+    if (kIsWeb) {
+      return 'http://localhost:3000';
+    }
+    return 'http://10.0.2.2:3000'; // Android emulator local backend
+  }
+
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _matriculeController = TextEditingController();
   final TextEditingController _phoneController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
-  final TextEditingController _confirmPasswordController = TextEditingController();
+  final TextEditingController _confirmPasswordController =
+      TextEditingController();
 
   String? _matriculeError;
 
@@ -104,7 +112,7 @@ class _RegisterPageState extends State<RegisterPage> {
     // Make API call to backend
     try {
       final response = await http.post(
-        Uri.parse('$baseUrl/auth/register'),
+        Uri.parse('$baseUrl/api/auth/register'),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
           'username': name,
@@ -170,9 +178,7 @@ class _RegisterPageState extends State<RegisterPage> {
                 "Taximan Registration",
                 style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
               ),
-
               const SizedBox(height: 30),
-
               TextField(
                 controller: _nameController,
                 decoration: InputDecoration(
@@ -184,9 +190,7 @@ class _RegisterPageState extends State<RegisterPage> {
                   fillColor: Colors.white,
                 ),
               ),
-
               const SizedBox(height: 15),
-
               TextField(
                 controller: _emailController,
                 decoration: InputDecoration(
@@ -198,9 +202,7 @@ class _RegisterPageState extends State<RegisterPage> {
                   fillColor: Colors.white,
                 ),
               ),
-
               const SizedBox(height: 15),
-
               TextField(
                 controller: _matriculeController,
                 decoration: InputDecoration(
@@ -225,16 +227,13 @@ class _RegisterPageState extends State<RegisterPage> {
                   }
                 },
               ),
-
               const SizedBox(height: 10),
-
               Text(
                 "Format: Region Code (2 letters) + Space + Number (3-4 digits) + Space + Letter\nExample: CE 4587 A, LT 9087 D",
-                style: TextStyle(fontSize: 11, color: Colors.black.withValues(alpha: 0.7)),
+                style: TextStyle(
+                    fontSize: 11, color: Colors.black.withValues(alpha: 0.7)),
               ),
-
               const SizedBox(height: 15),
-
               TextField(
                 controller: _phoneController,
                 keyboardType: TextInputType.phone,
@@ -247,9 +246,7 @@ class _RegisterPageState extends State<RegisterPage> {
                   fillColor: Colors.white,
                 ),
               ),
-
               const SizedBox(height: 15),
-
               TextField(
                 controller: _passwordController,
                 obscureText: true,
@@ -262,9 +259,7 @@ class _RegisterPageState extends State<RegisterPage> {
                   fillColor: Colors.white,
                 ),
               ),
-
               const SizedBox(height: 15),
-
               TextField(
                 controller: _confirmPasswordController,
                 obscureText: true,
@@ -277,9 +272,7 @@ class _RegisterPageState extends State<RegisterPage> {
                   fillColor: Colors.white,
                 ),
               ),
-
               const SizedBox(height: 30),
-
               SizedBox(
                 width: double.infinity,
                 height: 50,
@@ -294,9 +287,7 @@ class _RegisterPageState extends State<RegisterPage> {
                   ),
                 ),
               ),
-
               const SizedBox(height: 20),
-
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
@@ -330,6 +321,7 @@ class _RegisterPageState extends State<RegisterPage> {
   @override
   void dispose() {
     _nameController.dispose();
+    _emailController.dispose();
     _matriculeController.dispose();
     _phoneController.dispose();
     _passwordController.dispose();

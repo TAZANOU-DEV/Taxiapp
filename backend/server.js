@@ -1,11 +1,11 @@
-require('dotenv').config();
+const path = require('path');
+require('dotenv').config({ path: path.join(__dirname, '.env') });
 const express = require('express');
 const http = require('http');
 const cors = require('cors');
 const { Server } = require('socket.io');
 const db = require('./db');
 const multer = require('multer');
-const path = require('path');
 
 const app = express();
 const server = http.createServer(app);
@@ -56,6 +56,8 @@ app.get('/health', (req, res) => {
 // Import routes
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/admin', require('./routes/admin'));
+app.use('/api/drivers', require('./routes/drivers'));
+app.use('/api/driver-table', require('./routes/driverTable'));
 app.use('/api/taxi', require('./routes/taxiroutes')(io));
 
 // Global error handler

@@ -1,9 +1,10 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'register_page.dart';
-import 'home_page.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'register_page.dart';
+import 'home_page.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -13,10 +14,16 @@ class LoginPage extends StatefulWidget {
 }
 
 class _LoginPageState extends State<LoginPage> {
-  final String baseUrl = 'http://10.0.2.2:3000'; // For Android emulator, use 10.0.2.2 for localhost
-  final TextEditingController _matriculeController = TextEditingController();
+  String get baseUrl {
+    if (kIsWeb) {
+      return 'http://localhost:3000';
+    }
+    return 'http://10.0.2.2:3000'; // Android emulator local backend
+  }
+
+  final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
-  String? _matriculeError;
+  String? _emailError;
   bool _rememberMe = false;
 
   @override
@@ -27,61 +34,30 @@ class _LoginPageState extends State<LoginPage> {
 
   Future<void> _loadSavedCredentials() async {
     final prefs = await SharedPreferences.getInstance();
-    final savedMatricule = prefs.getString('matricule');
+    final savedEmail = prefs.getString('email') ?? prefs.getString('matricule');
     final savedPassword = prefs.getString('password');
     final remember = prefs.getBool('remember_me') ?? false;
 
-    if (remember && savedMatricule != null && savedPassword != null) {
-      _matriculeController.text = savedMatricule;
+    if (remember && savedEmail != null && savedPassword != null) {
+      _emailController.text = savedEmail;
       _passwordController.text = savedPassword;
       _rememberMe = true;
     }
   }
 
-  // Enhanced matricule validation with specific error messages
-  String? _validateMatricule(String matricule) {
-    if (matricule.isEmpty) {
-      return 'Taxi Matricule is required';
-    }
-
-    List<String> parts = matricule.split(' ');
-    if (parts.length != 3) {
-      return 'Format must be: XX 1234 Y (3 parts separated by spaces)\nExample: CE 4587 A';
-    }
-
-    String region = parts[0];
-    String number = parts[1];
-    String letter = parts[2];
-
-    if (!RegExp(r'^[A-Z]{2}$').hasMatch(region)) {
-      return 'Region code must be exactly 2 uppercase letters (e.g., CE, LT, OU)';
-    }
-
-    if (!RegExp(r'^\d{3,4}$').hasMatch(number)) {
-      return 'Number must be 3 or 4 digits (e.g., 123, 1234)';
-    }
-
-    if (!RegExp(r'^[A-Z]$').hasMatch(letter)) {
-      return 'Last part must be 1 uppercase letter (e.g., A, B, C)';
-    }
-
-    return null; // Valid matricule
-  }
-
   void _validateAndLogin() async {
-    final matricule = _matriculeController.text.trim();
+    final email = _emailController.text.trim();
 
-    if (matricule.isEmpty) {
+    if (email.isEmpty) {
       setState(() {
-        _matriculeError = 'Taxi Matricule is required';
+        _emailError = 'Email is required';
       });
       return;
     }
 
-    String? matriculeValidation = _validateMatricule(matricule);
-    if (matriculeValidation != null) {
+    if (!email.contains('@')) {
       setState(() {
-        _matriculeError = matriculeValidation;
+        _emailError = 'Enter a valid email';
       });
       return;
     }
@@ -95,12 +71,12 @@ class _LoginPageState extends State<LoginPage> {
 
     // Make API call to backend
     try {
-      print('Attempting login with matricule: $matricule');
+      print('Attempting login with email: $email');
       final response = await http.post(
-        Uri.parse('$baseUrl/auth/login'),
+        Uri.parse('$baseUrl/api/auth/login'),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
-          'matricule': matricule,
+          'email': email,
           'password': _passwordController.text,
         }),
       );
@@ -118,12 +94,13 @@ class _LoginPageState extends State<LoginPage> {
 
           // Save credentials if remember me is checked
           if (_rememberMe) {
-            await prefs.setString('matricule', matricule);
+            await prefs.setString('email', email);
             await prefs.setString('password', _passwordController.text);
             await prefs.setBool('remember_me', true);
           } else {
             // Clear saved data if not remembering
-            await prefs.remove('matricule');
+            await prefs.remove('email');
+            await prefs.remove('matricule'); // backward-compat cleanup
             await prefs.remove('password');
             await prefs.setBool('remember_me', false);
           }
@@ -168,25 +145,25 @@ class _LoginPageState extends State<LoginPage> {
               const SizedBox(height: 30),
 
               TextField(
-                controller: _matriculeController,
+                controller: _emailController,
                 decoration: InputDecoration(
-                  labelText: "Taxi Matricule",
-                  hintText: "e.g., CE 4587 A",
+                  labelText: "Email",
+                  hintText: "e.g., driver@taxiapp.com",
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(10),
                   ),
                   filled: true,
                   fillColor: Colors.white,
-                  errorText: _matriculeError,
+                  errorText: _emailError,
                   errorBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(10),
                     borderSide: const BorderSide(color: Colors.red, width: 2),
                   ),
                 ),
                 onChanged: (_) {
-                  if (_matriculeError != null) {
+                  if (_emailError != null) {
                     setState(() {
-                      _matriculeError = null;
+                      _emailError = null;
                     });
                   }
                 },
@@ -224,11 +201,6 @@ class _LoginPageState extends State<LoginPage> {
               ),
 
               const SizedBox(height: 10),
-
-              Text(
-                "Format: Region Code (2 letters) + Space + Number (3-4 digits) + Space + Letter",
-                style: TextStyle(fontSize: 12, color: Colors.black.withValues(alpha: 0.7)),
-              ),
 
               const SizedBox(height: 30),
 
@@ -281,7 +253,7 @@ class _LoginPageState extends State<LoginPage> {
 
   @override
   void dispose() {
-    _matriculeController.dispose();
+    _emailController.dispose();
     _passwordController.dispose();
     super.dispose();
   }
