@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:flutter_map/flutter_map.dart';
@@ -35,6 +36,10 @@ class _HomePageState extends State<HomePage> {
   Timer? locationTimer;
   bool isSharingLocation = false;
 
+  String? activeEmergencyRequesterId;
+  String? activeEmergencyRequesterName;
+  final Set<String> helpersOnWay = {};
+
   final MapController _mapController = MapController();
   List<Marker> _markers = [];
   final double _defaultZoom = 15.0;
@@ -45,13 +50,30 @@ class _HomePageState extends State<HomePage> {
     {"title": "Location shared", "time": "Yesterday - 6:12 PM"},
   ];
 
+  String get backendBaseUrl {
+    if (kIsWeb) return 'http://localhost:3000';
+    return 'http://10.0.2.2:3000';
+  }
+
   Future<void> sendEmergency() async {
     try {
       if (currentPosition == null) {
         await _getCurrentLocation();
       }
+      if (currentPosition == null) {
+        final errorMessage =
+            'Unable to send emergency because location is unavailable.';
+        debugPrint(errorMessage);
+        NotificationService.showNotification(
+          title: 'Emergency Failed',
+          body: errorMessage,
+          type: 'emergency',
+        );
+        return;
+      }
+
       final response = await http.post(
-        Uri.parse('http://10.0.2.2:3000/api/taxi/emergency'),
+        Uri.parse('$backendBaseUrl/api/taxi/emergency'),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
           'taxiId': taxId,
@@ -63,7 +85,6 @@ class _HomePageState extends State<HomePage> {
 
       if (response.statusCode == 200) {
         debugPrint("Emergency sent successfully");
-        // Record the activity in notifications
         NotificationService.showNotification(
           title: 'Emergency Alert Sent',
           body: 'Your emergency alert has been sent to nearby drivers',
@@ -74,10 +95,13 @@ class _HomePageState extends State<HomePage> {
               .insert(0, {"title": "Emergency alert sent", "time": "Just now"});
         });
       } else {
-        debugPrint("Failed to send emergency");
+        final errorBody = response.body;
+        debugPrint(
+            "Failed to send emergency: ${response.statusCode} $errorBody");
         NotificationService.showNotification(
           title: 'Emergency Alert Failed',
-          body: 'Failed to send emergency alert. Please try again.',
+          body:
+              'Failed to send emergency alert (${response.statusCode}). Please try again.',
           type: 'emergency',
         );
       }
@@ -132,7 +156,7 @@ class _HomePageState extends State<HomePage> {
     if (currentPosition == null) return;
     try {
       final response = await http.post(
-        Uri.parse('http://10.0.2.2:3000/api/taxi/location'),
+        Uri.parse('$backendBaseUrl/api/taxi/location'),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
           'taxiId': taxId,
@@ -162,7 +186,7 @@ class _HomePageState extends State<HomePage> {
     try {
       final response = await http.get(
         Uri.parse(
-            'http://10.0.2.2:3000/api/taxi/nearby?lat=${currentPosition!.latitude}&lng=${currentPosition!.longitude}'),
+            '$backendBaseUrl/api/taxi/nearby?lat=${currentPosition!.latitude}&lng=${currentPosition!.longitude}'),
       );
       if (response.statusCode == 200) {
         List<dynamic> data = jsonDecode(response.body);
@@ -327,6 +351,43 @@ class _HomePageState extends State<HomePage> {
       });
     };
 
+    socketService.onEmergencyAlert = (data) {
+      final incomingTaxiId = data['taxiId'] as String?;
+      final incomingTaxiLabel = data['taxiNumber'] as String? ?? incomingTaxiId;
+      if (incomingTaxiId != null && incomingTaxiId != taxId) {
+        setState(() {
+          activeEmergencyRequesterId = incomingTaxiId;
+          activeEmergencyRequesterName = incomingTaxiLabel;
+          activities.insert(0, {
+            "title": "Emergency request from $incomingTaxiLabel",
+            "time": _currentActivityTime(),
+          });
+        });
+      }
+    };
+
+    socketService.onHelpOnWayUpdate = (data) {
+      final requestingTaxiId = data['requestingTaxiId'] as String?;
+      final helperTaxiId = data['helperTaxiId'] as String?;
+      final helperTaxiLabel = helperTaxiId ?? 'Unknown taxi';
+
+      setState(() {
+        if (requestingTaxiId == taxId && helperTaxiId != null) {
+          helpersOnWay.add(helperTaxiId);
+        }
+        activities.insert(0, {
+          "title": "$helperTaxiLabel is coming to help",
+          "time": _currentActivityTime(),
+        });
+      });
+
+      NotificationService.showNotification(
+        title: 'Taxi Help Update',
+        body: '$helperTaxiLabel is on the way',
+        type: 'update',
+      );
+    };
+
     // Handle taxi going offline
     socketService.onTaxiOffline = (taxiId) {
       setState(() {
@@ -347,6 +408,9 @@ class _HomePageState extends State<HomePage> {
   void sendEmergencyAlert() {
     setState(() {
       isInDanger = true;
+      activeEmergencyRequesterId = taxId;
+      activeEmergencyRequesterName = taxId;
+      helpersOnWay.clear();
       activities.insert(0, {
         "title": "Emergency alert sent",
         "time": _currentActivityTime(),
@@ -367,6 +431,9 @@ class _HomePageState extends State<HomePage> {
   void stopEmergencyAlert() {
     setState(() {
       isInDanger = false;
+      activeEmergencyRequesterId = null;
+      activeEmergencyRequesterName = null;
+      helpersOnWay.clear();
       activities.insert(0, {
         "title": "Emergency alert stopped",
         "time": _currentActivityTime(),
@@ -388,6 +455,40 @@ class _HomePageState extends State<HomePage> {
     }
 
     sendEmergencyAlert();
+  }
+
+  void sendHelpOnWay() {
+    if (activeEmergencyRequesterId == null ||
+        activeEmergencyRequesterId == taxId) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No active emergency request available to help.'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    socketService.sendHelpOnWay(
+      activeEmergencyRequesterId!,
+      taxId,
+      currentPosition?.latitude ?? 0,
+      currentPosition?.longitude ?? 0,
+    );
+
+    setState(() {
+      activities.insert(0, {
+        "title": "You are coming to help Taxi ${activeEmergencyRequesterName}",
+        "time": _currentActivityTime(),
+      });
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Help is on the way. Notification sent.'),
+        backgroundColor: Colors.green,
+      ),
+    );
   }
 
   @override
@@ -572,6 +673,35 @@ class _HomePageState extends State<HomePage> {
                 _profileCard(),
                 const SizedBox(height: 14),
                 _emergencyButton(),
+                const SizedBox(height: 12),
+                _helpOnWayButton(),
+                if (activeEmergencyRequesterId != null &&
+                    activeEmergencyRequesterId != taxId)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 12.0),
+                    child: Center(
+                      child: Text(
+                        'Active emergency request from ${activeEmergencyRequesterName ?? activeEmergencyRequesterId}',
+                        style: const TextStyle(
+                          color: Colors.lightGreenAccent,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ),
+                if (helpersOnWay.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 12.0),
+                    child: Center(
+                      child: Text(
+                        'Helpers on the way: ${helpersOnWay.length}',
+                        style: const TextStyle(
+                          color: Colors.lightGreenAccent,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ),
                 const SizedBox(height: 16),
                 GridView.count(
                   shrinkWrap: true,
@@ -729,6 +859,18 @@ class _HomePageState extends State<HomePage> {
                         color: isInDanger ? Colors.black : Colors.white,
                       ),
                     ),
+                    if (helpersOnWay.isNotEmpty && isInDanger) ...[
+                      const SizedBox(height: 8),
+                      Text(
+                        '${helpersOnWay.length} taxi(s) coming to help',
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          color: Colors.black,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -756,6 +898,43 @@ class _HomePageState extends State<HomePage> {
               style: const TextStyle(color: Colors.white, fontSize: 12),
             ),
           ],
+        ),
+      ),
+    );
+  }
+
+  Widget _helpOnWayButton() {
+    return Center(
+      child: InkWell(
+        onTap: sendHelpOnWay,
+        borderRadius: BorderRadius.circular(16),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 14),
+          decoration: BoxDecoration(
+            color: Colors.green,
+            borderRadius: BorderRadius.circular(24),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.green.withOpacity(0.4),
+                blurRadius: 16,
+                spreadRadius: 1,
+              ),
+            ],
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: const [
+              Icon(Icons.support_agent, color: Colors.white),
+              SizedBox(width: 10),
+              Text(
+                'I am coming',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

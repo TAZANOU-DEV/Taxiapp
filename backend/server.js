@@ -58,6 +58,12 @@ app.use('/api/auth', require('./routes/auth'));
 app.use('/api/admin', require('./routes/admin'));
 app.use('/api/drivers', require('./routes/drivers'));
 app.use('/api/driver-table', require('./routes/driverTable'));
+app.use('/api/activities', require('./routes/activities'));
+app.use('/api/activity', require('./routes/activity'));
+app.use('/api/emergency-alerts', require('./routes/emergencyAlerts'));
+app.use('/api/location-history', require('./routes/locationHistory'));
+app.use('/api/notifications', require('./routes/notifications'));
+app.use('/api/taxi-orders', require('./routes/taxiOrders'));
 app.use('/api/taxi', require('./routes/taxiroutes')(io));
 
 // Global error handler
@@ -282,6 +288,38 @@ io.on('connection', (socket) => {
     } catch (error) {
       console.error('❌ Error processing emergency:', error);
       socket.emit('error', { message: 'Failed to send emergency alert' });
+    }
+  });
+
+  // Helper taxi is on the way
+  socket.on('help_on_way', async (data) => {
+    try {
+      const {
+        requestingTaxiId,
+        helperTaxiId,
+        lat,
+        lng,
+        message = 'Help is on the way',
+      } = data;
+
+      await db.query(`
+        INSERT INTO activities (taxi_id, title, description, type)
+        VALUES (?, ?, ?, 'order')
+      `, [helperTaxiId, '🚕 Help on the way', message]);
+
+      io.emit('help_on_way', {
+        requestingTaxiId,
+        helperTaxiId,
+        lat,
+        lng,
+        message,
+        timestamp: new Date(),
+      });
+
+      console.log(`🚕 Taxi ${helperTaxiId} is coming to help ${requestingTaxiId}`);
+    } catch (error) {
+      console.error('❌ Error processing help_on_way:', error);
+      socket.emit('error', { message: 'Failed to send help on way notification' });
     }
   });
 

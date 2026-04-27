@@ -111,6 +111,33 @@ const initDatabase = async () => {
     `);
     console.log('✅ Drivers table created');
 
+    // Create legacy emergency alerts table (driver-centric)
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS emergency_alerts (
+        alert_id INT NOT NULL AUTO_INCREMENT,
+        driver_id INT NOT NULL,
+        latitude DECIMAL(10,7) DEFAULT NULL,
+        longitude DECIMAL(10,7) DEFAULT NULL,
+        status ENUM('pending','resolved') DEFAULT 'pending',
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (alert_id),
+        INDEX idx_driver (driver_id),
+        INDEX idx_status (status)
+      )
+    `);
+
+    // Create legacy activity table (driver-centric)
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS activity (
+        activity_id INT NOT NULL AUTO_INCREMENT,
+        driver_id INT NOT NULL,
+        action VARCHAR(255) NOT NULL,
+        timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (activity_id),
+        INDEX idx_driver (driver_id)
+      )
+    `);
+
     // Add profile_image column if it doesn't exist (for existing databases)
     try {
       await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS profile_image VARCHAR(255)`);

@@ -28,6 +28,29 @@ router.post('/location', asyncHandler(async (req, res) => {
 
   await db.query(sql, [taxiId, lat, lng]);
 
+  // Mirror location into legacy `location_history` table when possible
+  try {
+    const [driverRows] = await db.query(
+      `
+      SELECT d.driver_id
+      FROM drivers d
+      JOIN taxis t ON d.taxi_matricule = t.license_plate
+      WHERE t.taxi_id = ?
+      LIMIT 1
+      `,
+      [taxiId]
+    );
+
+    if (driverRows && driverRows.length > 0) {
+      await db.query(
+        'INSERT INTO location_history (driver_id, latitude, longitude) VALUES (?, ?, ?)',
+        [driverRows[0].driver_id, lat, lng]
+      );
+    }
+  } catch (e) {
+    // Ignore if `location_history` table doesn't exist.
+  }
+
   // Mirror location into legacy `drivers` table when possible (drivers.taxi_matricule matches taxis.license_plate)
   try {
     await db.query(
@@ -71,6 +94,23 @@ router.post('/emergency', asyncHandler(async (req, res) => {
   );
 
   const taxiInfo = taxiResults[0] || {};
+
+  // Mirror to legacy `emergency_alerts` table when possible (driver_id comes from `drivers` table)
+  try {
+    const [driverRows] = await db.query(
+      'SELECT d.driver_id FROM drivers d WHERE d.taxi_matricule = ? LIMIT 1',
+      [taxiInfo.license_plate || null]
+    );
+
+    if (driverRows && driverRows.length > 0) {
+      await db.query(
+        'INSERT INTO emergency_alerts (driver_id, latitude, longitude, status) VALUES (?, ?, ?, ?)',
+        [driverRows[0].driver_id, lat || null, lng || null, 'pending']
+      );
+    }
+  } catch (e) {
+    // Ignore if legacy tables don't exist.
+  }
 
   // Log activity
   await db.query(

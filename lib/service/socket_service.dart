@@ -7,10 +7,13 @@ class SocketService {
   Function(Map<String, dynamic>)? onTaxiLocationUpdate;
   Function(Map<String, dynamic>)? onIncomingOrder;
   Function(Map<String, dynamic>)? onOrderStatusUpdate;
+  Function(Map<String, dynamic>)? onEmergencyAlert;
+  Function(Map<String, dynamic>)? onHelpOnWayUpdate;
   Function(String)? onTaxiOffline;
 
   void connect() {
-    socket = IO.io('http://10.0.2.2:3000', <String, dynamic>{
+    final serverUrl = kIsWeb ? 'http://localhost:3000' : 'http://10.0.2.2:3000';
+    socket = IO.io(serverUrl, <String, dynamic>{
       'transports': ['websocket'],
       'autoConnect': false,
     });
@@ -88,6 +91,9 @@ class SocketService {
     // Listen for emergency alerts
     socket.on('emergencyAlert', (data) {
       debugPrint('Received alert: $data');
+      if (onEmergencyAlert != null) {
+        onEmergencyAlert!(Map<String, dynamic>.from(data));
+      }
       final taxiNumber = data['taxiNumber'] ?? data['taxiId'];
       final driverName = data['driverName'] ?? 'Unknown';
       final alertMessage =
@@ -96,6 +102,20 @@ class SocketService {
         title: '🚨 Emergency Alert',
         body: alertMessage,
         type: 'emergency',
+      );
+    });
+
+    // Listen for helpers on the way
+    socket.on('help_on_way', (data) {
+      debugPrint('Help on way: $data');
+      if (onHelpOnWayUpdate != null) {
+        onHelpOnWayUpdate!(Map<String, dynamic>.from(data));
+      }
+      final helperTaxiId = data['helperTaxiId'] as String? ?? 'A taxi';
+      NotificationService.showNotification(
+        title: 'Help Update',
+        body: 'Taxi $helperTaxiId is on the way',
+        type: 'update',
       );
     });
 
@@ -168,6 +188,22 @@ class SocketService {
       title: 'Emergency Alert Sent',
       body: 'Your emergency alert has been sent to nearby drivers',
       type: 'emergency',
+    );
+  }
+
+  void sendHelpOnWay(
+      String requestingTaxiId, String helperTaxiId, double lat, double lng) {
+    socket.emit('help_on_way', {
+      'requestingTaxiId': requestingTaxiId,
+      'helperTaxiId': helperTaxiId,
+      'lat': lat,
+      'lng': lng,
+      'message': 'Help is on the way',
+    });
+    NotificationService.showNotification(
+      title: 'Help Sent',
+      body: 'You notified the requester that help is on the way.',
+      type: 'update',
     );
   }
 
