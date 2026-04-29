@@ -1,4 +1,7 @@
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
 
 class NotificationItem {
   final String id;
@@ -76,6 +79,9 @@ class NotificationService {
 
     _notificationHistory.insert(0, notificationItem);
 
+    // Save to backend
+    await _saveNotificationToBackend(notificationItem);
+
     const AndroidNotificationDetails androidDetails =
         AndroidNotificationDetails(
       'emergency_channel',
@@ -120,5 +126,46 @@ class NotificationService {
       type: 'update',
       id: 2,
     );
+  }
+
+  static Future<void> _saveNotificationToBackend(
+      NotificationItem notification) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString('token');
+      final userData = prefs.getString('user');
+
+      if (token == null || userData == null) {
+        print('No auth token or user data found, skipping backend save');
+        return;
+      }
+
+      final user = jsonDecode(userData);
+      final taxiId = user['email']; // Using email as taxi ID for now
+
+      final baseUrl = 'http://10.0.2.2:3000'; // Android emulator
+
+      final response = await http.post(
+        Uri.parse('$baseUrl/api/activities'),
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode({
+          'taxiId': taxiId,
+          'title': notification.title,
+          'description': notification.body,
+          'type': notification.type,
+        }),
+      );
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        print('Notification saved to backend successfully');
+      } else {
+        print('Failed to save notification to backend: ${response.statusCode}');
+      }
+    } catch (e) {
+      print('Error saving notification to backend: $e');
+    }
   }
 }

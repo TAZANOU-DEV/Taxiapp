@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:http/http.dart' as http;
 import 'login_page.dart';
 
 class SettingsPage extends StatefulWidget {
@@ -553,6 +555,10 @@ class _SettingsPageState extends State<SettingsPage> {
         setState(() {
           _profileImage = File(pickedFile.path);
         });
+
+        // Upload image to backend
+        await _uploadProfileImage(pickedFile);
+
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text("Profile picture updated successfully!"),
@@ -811,5 +817,59 @@ class _SettingsPageState extends State<SettingsPage> {
         ],
       ),
     );
+  }
+
+  Future<void> _uploadProfileImage(XFile imageFile) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString('token');
+
+      if (token == null) {
+        print('No auth token found');
+        return;
+      }
+
+      final baseUrl = 'http://10.0.2.2:3000'; // Android emulator
+
+      // Create multipart request
+      final request = http.MultipartRequest(
+        'PUT',
+        Uri.parse('$baseUrl/api/auth/profile'),
+      );
+
+      request.headers['Authorization'] = 'Bearer $token';
+
+      // Add image file
+      request.files.add(
+        await http.MultipartFile.fromPath(
+          'profileImage',
+          imageFile.path,
+        ),
+      );
+
+      final response = await request.send();
+      final responseBody = await response.stream.bytesToString();
+
+      if (response.statusCode == 200) {
+        print('Profile image uploaded successfully');
+      } else {
+        print(
+            'Failed to upload profile image: ${response.statusCode} - $responseBody');
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text("Failed to upload image to server"),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } catch (e) {
+      print('Error uploading profile image: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text("Error uploading image: $e"),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 }

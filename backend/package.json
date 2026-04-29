@@ -18,7 +18,10 @@
     "bcryptjs": "^2.4.3",
     "jsonwebtoken": "^9.0.2",
     "dotenv": "^16.3.1",
-    "multer": "^1.4.5-lts.1"
+    "multer": "^1.4.5-lts.1",
+    "nodemailer": "^6.9.4",
+    "google-auth-library": "^10.0.0",
+    "apple-signin-auth": "^2.0.0"
   },
   "devDependencies": {
     "nodemon": "^3.0.2"

@@ -80,13 +80,19 @@ const initDatabase = async () => {
         email VARCHAR(100) UNIQUE NOT NULL,
         password_hash VARCHAR(255) NOT NULL,
         role ENUM('admin', 'driver') DEFAULT 'driver',
+        provider VARCHAR(50) DEFAULT NULL,
+        provider_id VARCHAR(255) DEFAULT NULL,
+        reset_token VARCHAR(255) DEFAULT NULL,
+        reset_token_expires DATETIME DEFAULT NULL,
         is_active BOOLEAN DEFAULT TRUE,
         phone VARCHAR(20),
         profile_image VARCHAR(255),
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
         INDEX idx_email (email),
-        INDEX idx_username (username)
+        INDEX idx_username (username),
+        INDEX idx_provider (provider),
+        INDEX idx_provider_id (provider_id)
       )
     `);
     console.log('✅ Users table created');

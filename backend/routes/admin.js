@@ -1,5 +1,7 @@
 const express = require('express');
 const db = require('../db');
+const authRoutes = require('./auth');
+const { authenticateToken } = authRoutes;
 
 const router = express.Router();
 
@@ -10,6 +12,9 @@ const requireAdmin = (req, res, next) => {
   }
   next();
 };
+
+router.use(authenticateToken);
+router.use(requireAdmin);
 
 // Get all taxis
 router.get('/taxis', async (req, res) => {

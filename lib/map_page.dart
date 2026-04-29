@@ -25,7 +25,7 @@ class _MapPageState extends State<MapPage> {
   List<Marker> _markers = [];
   Timer? locationUpdateTimer;
 
-  const LatLng initialLocation = LatLng(3.8480, 11.5021); // Cameroon
+  static const LatLng initialLocation = LatLng(3.8480, 11.5021); // Cameroon
   double currentZoom = 15.0;
 
   @override

@@ -12,11 +12,14 @@ dependencies:
 
   # Packages
   socket_io_client: ^2.0.0
-  http: ^1.6.0
+  http: ^0.13.5
+  google_sign_in: ^5.4.0
+  flutter_facebook_auth: ^5.0.11
+  sign_in_with_apple: ^3.2.0
   geolocator: ^9.0.2
   flutter_local_notifications: ^16.3.2
-  flutter_map: ^5.0.0
-  latlong2: ^0.9.0
+  flutter_map: ^4.0.0
+  latlong2: ^0.8.2
   image_picker: ^0.8.7+5
   shared_preferences: ^2.2.2
 

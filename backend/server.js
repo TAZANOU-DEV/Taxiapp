@@ -7,6 +7,31 @@ const { Server } = require('socket.io');
 const db = require('./db');
 const multer = require('multer');
 
+const migrateAuthSchema = async () => {
+  try {
+    await db.query(`ALTER TABLE users ADD COLUMN provider VARCHAR(50)`);
+  } catch (err) {
+    if (!err.message.includes('Duplicate column name')) throw err;
+  }
+  try {
+    await db.query(`ALTER TABLE users ADD COLUMN provider_id VARCHAR(255)`);
+  } catch (err) {
+    if (!err.message.includes('Duplicate column name')) throw err;
+  }
+  try {
+    await db.query(`ALTER TABLE users ADD COLUMN reset_token VARCHAR(255)`);
+  } catch (err) {
+    if (!err.message.includes('Duplicate column name')) throw err;
+  }
+  try {
+    await db.query(`ALTER TABLE users ADD COLUMN reset_token_expires DATETIME`);
+  } catch (err) {
+    if (!err.message.includes('Duplicate column name')) throw err;
+  }
+};
+
+migrateAuthSchema();
+
 const app = express();
 const server = http.createServer(app);
 
