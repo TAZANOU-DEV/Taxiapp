@@ -143,7 +143,7 @@ class NotificationService {
       final user = jsonDecode(userData);
       final taxiId = user['email']; // Using email as taxi ID for now
 
-      final baseUrl = 'http://10.0.2.2:3000'; // Android emulator
+      const baseUrl = 'http://10.0.2.2:3000'; // Android emulator
 
       final response = await http.post(
         Uri.parse('$baseUrl/api/activities'),

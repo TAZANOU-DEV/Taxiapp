@@ -61,7 +61,7 @@ class _HomePageState extends State<HomePage> {
         await _getCurrentLocation();
       }
       if (currentPosition == null) {
-        final errorMessage =
+        const errorMessage =
             'Unable to send emergency because location is unavailable.';
         debugPrint(errorMessage);
         NotificationService.showNotification(
@@ -478,7 +478,7 @@ class _HomePageState extends State<HomePage> {
 
     setState(() {
       activities.insert(0, {
-        "title": "You are coming to help Taxi ${activeEmergencyRequesterName}",
+        "title": "You are coming to help Taxi $activeEmergencyRequesterName",
         "time": _currentActivityTime(),
       });
     });
@@ -921,9 +921,9 @@ class _HomePageState extends State<HomePage> {
               ),
             ],
           ),
-          child: Row(
+          child: const Row(
             mainAxisSize: MainAxisSize.min,
-            children: const [
+            children: [
               Icon(Icons.support_agent, color: Colors.white),
               SizedBox(width: 10),
               Text(

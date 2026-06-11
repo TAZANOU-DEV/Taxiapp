@@ -829,7 +829,7 @@ class _SettingsPageState extends State<SettingsPage> {
         return;
       }
 
-      final baseUrl = 'http://10.0.2.2:3000'; // Android emulator
+      const baseUrl = 'http://10.0.2.2:3000'; // Android emulator
 
       // Create multipart request
       final request = http.MultipartRequest(
