@@ -1,13 +1,6 @@
 
 // Plugin versions are declared in settings.gradle.kts to avoid duplicate classpath entries.
 
-allprojects {
-    repositories {
-        google()
-        mavenCentral()
-    }
-}
-
 val newBuildDir: Directory =
     rootProject.layout.buildDirectory
         .dir("../../build")

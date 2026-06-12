@@ -3,6 +3,23 @@ require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 const db = require('../db');
 const bcrypt = require('bcryptjs');
 
+const ensureColumn = async (tableName, columnName, definition) => {
+  const [columns] = await db.query(
+    `
+    SELECT COLUMN_NAME
+    FROM INFORMATION_SCHEMA.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE()
+      AND TABLE_NAME = ?
+      AND COLUMN_NAME = ?
+    `,
+    [tableName, columnName]
+  );
+
+  if (columns.length === 0) {
+    await db.query(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${definition}`);
+  }
+};
+
 const initDatabase = async () => {
   try {
     console.log('🚀 Initializing database...');
@@ -135,21 +152,13 @@ const initDatabase = async () => {
       )
     `);
 
-    try {
-      await db.query(`ALTER TABLE emergency_alerts ADD COLUMN IF NOT EXISTS taxi_id VARCHAR(50) DEFAULT NULL`);
-    } catch (error) {
-      // Ignore if column already exists or DB version does not support IF NOT EXISTS.
-    }
+    await ensureColumn('emergency_alerts', 'taxi_id', 'VARCHAR(50) DEFAULT NULL');
     try {
       await db.query(`ALTER TABLE emergency_alerts MODIFY COLUMN driver_id INT DEFAULT NULL`);
     } catch (error) {
       // Ignore if modification is not needed.
     }
-    try {
-      await db.query(`ALTER TABLE emergency_alerts ADD COLUMN IF NOT EXISTS message TEXT DEFAULT NULL`);
-    } catch (error) {
-      // Ignore if column already exists.
-    }
+    await ensureColumn('emergency_alerts', 'message', 'TEXT DEFAULT NULL');
 
     // Create legacy activity table (driver-centric)
     await db.query(`
@@ -165,7 +174,7 @@ const initDatabase = async () => {
 
     // Add profile_image column if it doesn't exist (for existing databases)
     try {
-      await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS profile_image VARCHAR(255)`);
+      await ensureColumn('users', 'profile_image', 'VARCHAR(255)');
       console.log('✅ Profile image column added');
     } catch (error) {
       console.log('Profile image column already exists or error:', error.message);

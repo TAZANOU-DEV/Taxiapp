@@ -6,6 +6,7 @@ import 'home_page.dart';
 import 'notification.dart';
 import 'chat_page.dart';
 import 'notification_page.dart';
+import 'admin_dashboard.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -28,6 +29,7 @@ class MyApp extends StatelessWidget {
         '/login': (_) => const LoginPage(),
         '/register': (_) => const RegisterPage(),
         '/home': (_) => const HomePage(),
+        '/admin': (_) => const AdminDashboard(),
         '/chat': (_) => const ChatPage(),
         '/notifications': (_) => const NotificationPage(),
       },

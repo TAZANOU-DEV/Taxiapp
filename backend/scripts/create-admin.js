@@ -5,9 +5,9 @@ const bcrypt = require('bcryptjs');
 
 const createAdminUser = async () => {
   try {
-    const username = 'admin';
-    const email = 'admin@gmail.com';
-    const password = 'zxcvbnm+';
+    const username = process.env.ADMIN_USERNAME || 'admin';
+    const email = process.env.ADMIN_EMAIL || 'admin@taxiapp.com';
+    const password = process.env.ADMIN_PASSWORD || 'admin123';
     const role = 'admin';
 
     const normalizedEmail = email.trim().toLowerCase();

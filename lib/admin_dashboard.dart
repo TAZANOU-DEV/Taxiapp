@@ -50,7 +50,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
     final prefs = await SharedPreferences.getInstance();
     final token = prefs.getString('token');
     if (token == null) {
-      _logout();
+      if (mounted) _logout();
       return {};
     }
     return {
@@ -65,22 +65,60 @@ class _AdminDashboardState extends State<AdminDashboard> {
       _error = null;
     });
 
+    final errors = <String>[];
+    await Future.wait([
+      _fetchStats().catchError(
+        (error) => errors.add(_formatFetchError('Stats', error)),
+      ),
+      _fetchDrivers().catchError(
+        (error) => errors.add(_formatFetchError('Drivers', error)),
+      ),
+      _fetchOrders().catchError(
+        (error) => errors.add(_formatFetchError('Orders', error)),
+      ),
+      _fetchEmergencies().catchError(
+        (error) => errors.add(_formatFetchError('Emergencies', error)),
+      ),
+    ]);
+
+    if (!mounted) return;
+    setState(() {
+      _error = errors.isEmpty ? null : errors.join('\n');
+      _isLoading = false;
+    });
+  }
+
+  int _asInt(dynamic value) {
+    if (value == null) return 0;
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    return int.tryParse(value.toString()) ?? 0;
+  }
+
+  List<Map<String, dynamic>> _asMapList(dynamic value) {
+    if (value is! List) return [];
+
+    return value
+        .whereType<Map<String, dynamic>>()
+        .map((item) => Map<String, dynamic>.from(item))
+        .toList();
+  }
+
+  String _formatFetchError(String label, Object error) {
+    final message = error.toString().replaceFirst('Exception: ', '');
+    return '$label: $message';
+  }
+
+  String _responseMessage(http.Response response, String fallback) {
     try {
-      await Future.wait([
-        _fetchStats(),
-        _fetchDrivers(),
-        _fetchOrders(),
-        _fetchEmergencies(),
-      ]);
-    } catch (error) {
-      setState(() {
-        _error = error.toString();
-      });
-    } finally {
-      setState(() {
-        _isLoading = false;
-      });
+      final data = jsonDecode(response.body);
+      if (data is Map<String, dynamic>) {
+        return (data['error'] ?? data['message'] ?? fallback).toString();
+      }
+    } catch (_) {
+      return fallback;
     }
+    return fallback;
   }
 
   Future<void> _fetchStats() async {
@@ -93,7 +131,10 @@ class _AdminDashboardState extends State<AdminDashboard> {
     );
 
     if (response.statusCode != 200) {
-      throw Exception('Stats request failed: ${response.statusCode}');
+      throw Exception(_responseMessage(
+        response,
+        'Stats request failed: ${response.statusCode}',
+      ));
     }
 
     final data = jsonDecode(response.body);
@@ -101,6 +142,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
       throw Exception(data['error'] ?? 'Failed to fetch stats');
     }
 
+    if (!mounted) return;
     setState(() {
       _stats = Map<String, dynamic>.from(data['stats'] ?? {});
     });
@@ -116,7 +158,10 @@ class _AdminDashboardState extends State<AdminDashboard> {
     );
 
     if (response.statusCode != 200) {
-      throw Exception('Drivers request failed: ${response.statusCode}');
+      throw Exception(_responseMessage(
+        response,
+        'Drivers request failed: ${response.statusCode}',
+      ));
     }
 
     final data = jsonDecode(response.body);
@@ -124,8 +169,9 @@ class _AdminDashboardState extends State<AdminDashboard> {
       throw Exception(data['error'] ?? 'Failed to fetch drivers');
     }
 
+    if (!mounted) return;
     setState(() {
-      _drivers = List<Map<String, dynamic>>.from(data['drivers'] ?? []);
+      _drivers = _asMapList(data['drivers']);
     });
   }
 
@@ -139,7 +185,10 @@ class _AdminDashboardState extends State<AdminDashboard> {
     );
 
     if (response.statusCode != 200) {
-      throw Exception('Orders request failed: ${response.statusCode}');
+      throw Exception(_responseMessage(
+        response,
+        'Orders request failed: ${response.statusCode}',
+      ));
     }
 
     final data = jsonDecode(response.body);
@@ -147,8 +196,9 @@ class _AdminDashboardState extends State<AdminDashboard> {
       throw Exception(data['error'] ?? 'Failed to fetch orders');
     }
 
+    if (!mounted) return;
     setState(() {
-      _orders = List<Map<String, dynamic>>.from(data['orders'] ?? []);
+      _orders = _asMapList(data['orders']);
     });
   }
 
@@ -166,7 +216,10 @@ class _AdminDashboardState extends State<AdminDashboard> {
     final response = await http.get(uri, headers: headers);
 
     if (response.statusCode != 200) {
-      throw Exception('Emergency request failed: ${response.statusCode}');
+      throw Exception(_responseMessage(
+        response,
+        'Emergency request failed: ${response.statusCode}',
+      ));
     }
 
     final data = jsonDecode(response.body);
@@ -174,8 +227,9 @@ class _AdminDashboardState extends State<AdminDashboard> {
       throw Exception(data['error'] ?? 'Failed to fetch emergencies');
     }
 
+    if (!mounted) return;
     setState(() {
-      _emergencies = List<Map<String, dynamic>>.from(data['emergencies'] ?? []);
+      _emergencies = _asMapList(data['emergencies']);
     });
   }
 
@@ -244,6 +298,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
   }
 
   void _showSnackBar(String message, {Color color = Colors.red}) {
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message),
@@ -263,8 +318,9 @@ class _AdminDashboardState extends State<AdminDashboard> {
         return DrvierDetailSheet(
           driver: driver,
           onStatusToggle: (bool toOnline) {
-            if (driver['taxi_id'] != null) {
-              _updateTaxiStatus(driver['taxi_id'], toOnline);
+            final taxiId = driver['taxi_id']?.toString();
+            if (taxiId != null && taxiId.isNotEmpty) {
+              _updateTaxiStatus(taxiId, toOnline);
             }
           },
         );
@@ -299,29 +355,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
-          : _error != null
-              ? Center(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 24),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Text(
-                          'Error: $_error',
-                          style:
-                              const TextStyle(color: Colors.red, fontSize: 16),
-                          textAlign: TextAlign.center,
-                        ),
-                        const SizedBox(height: 16),
-                        ElevatedButton(
-                          onPressed: _refreshAll,
-                          child: const Text('Retry'),
-                        ),
-                      ],
-                    ),
-                  ),
-                )
-              : _buildSelectedTab(),
+          : _buildDashboardBody(),
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _selectedTab.index,
         onTap: (index) {
@@ -359,6 +393,45 @@ class _AdminDashboardState extends State<AdminDashboard> {
       default:
         return _buildOverviewTab();
     }
+  }
+
+  Widget _buildDashboardBody() {
+    return Column(
+      children: [
+        if (_error != null) _buildErrorBanner(),
+        Expanded(child: _buildSelectedTab()),
+      ],
+    );
+  }
+
+  Widget _buildErrorBanner() {
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.red[50],
+        border: Border.all(color: Colors.red.shade200),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.error_outline, color: Colors.red[700]),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              _error!,
+              style: TextStyle(color: Colors.red[800]),
+            ),
+          ),
+          TextButton(
+            onPressed: _refreshAll,
+            child: const Text('Retry'),
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _buildOverviewTab() {
@@ -465,7 +538,9 @@ class _AdminDashboardState extends State<AdminDashboard> {
                                           driver['is_online'] == 1 ||
                                               driver['is_online'] == true;
                                       _updateTaxiStatus(
-                                          driver['taxi_id'], !isOnline);
+                                        driver['taxi_id'].toString(),
+                                        !isOnline,
+                                      );
                                     },
                               child: Text(
                                 (driver['is_online'] == 1 ||
@@ -556,10 +631,12 @@ class _AdminDashboardState extends State<AdminDashboard> {
   }
 
   Widget _buildOrderManagementCard(Map<String, dynamic> order) {
-    final orderId = order['id'] ?? 0;
-    final currentStatus = _selectedOrderStatuses[orderId] ??
+    final orderId = _asInt(order['id']);
+    final rawStatus = _selectedOrderStatuses[orderId] ??
         order['status']?.toString() ??
         'requested';
+    final currentStatus =
+        _orderStatusOptions.contains(rawStatus) ? rawStatus : 'requested';
     return Card(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
       elevation: 2,
@@ -601,8 +678,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                 ElevatedButton(
                   onPressed: () {
                     final selectedStatus = _selectedOrderStatuses[orderId] ??
-                        order['status']?.toString() ??
-                        'requested';
+                        currentStatus;
                     _updateOrderStatus(orderId, selectedStatus);
                   },
                   style: ElevatedButton.styleFrom(
@@ -668,22 +744,22 @@ class _AdminDashboardState extends State<AdminDashboard> {
       crossAxisSpacing: 16,
       mainAxisSpacing: 16,
       children: [
-        _infoCard('Online taxis', _stats['online_taxis']?.toString() ?? '0',
+        _infoCard('Online taxis', _asInt(_stats['online_taxis']).toString(),
             Colors.green),
-        _infoCard('Total taxis', _stats['total_taxis']?.toString() ?? '0',
+        _infoCard('Total taxis', _asInt(_stats['total_taxis']).toString(),
             Colors.blue),
-        _infoCard('Active orders', _stats['active_orders']?.toString() ?? '0',
+        _infoCard('Active orders', _asInt(_stats['active_orders']).toString(),
             Colors.orange),
         _infoCard('Completed orders',
-            _stats['completed_orders']?.toString() ?? '0', Colors.purple),
+            _asInt(_stats['completed_orders']).toString(), Colors.purple),
       ],
     );
   }
 
   Widget _buildTrendsCard() {
-    final totalOrders = _stats['total_orders'] ?? 1;
-    final activeOrders = _stats['active_orders'] ?? 0;
-    final completedOrders = _stats['completed_orders'] ?? 0;
+    final totalOrders = _asInt(_stats['total_orders']);
+    final activeOrders = _asInt(_stats['active_orders']);
+    final completedOrders = _asInt(_stats['completed_orders']);
     return Card(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       elevation: 3,
@@ -712,10 +788,8 @@ class _AdminDashboardState extends State<AdminDashboard> {
   }
 
   Widget _buildDriverStatusCard() {
-    final totalDrivers =
-        int.tryParse(_stats['total_drivers']?.toString() ?? '0') ?? 0;
-    final onlineDrivers =
-        int.tryParse(_stats['online_taxis']?.toString() ?? '0') ?? 0;
+    final totalDrivers = _asInt(_stats['total_drivers']);
+    final onlineDrivers = _asInt(_stats['online_taxis']);
     return Card(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       elevation: 3,
@@ -855,10 +929,10 @@ class _AdminDashboardState extends State<AdminDashboard> {
 
   Widget _buildTrendBars() {
     final values = [
-      (_stats['online_taxis'] ?? 0) as int,
-      (_stats['active_orders'] ?? 0) as int,
-      (_stats['today_emergencies'] ?? 0) as int,
-      (_stats['total_drivers'] ?? 0) as int,
+      _asInt(_stats['online_taxis']),
+      _asInt(_stats['active_orders']),
+      _asInt(_stats['today_emergencies']),
+      _asInt(_stats['total_drivers']),
     ];
     final labels = ['Online', 'Active', 'Emergencies', 'Drivers'];
     final maxValue =
