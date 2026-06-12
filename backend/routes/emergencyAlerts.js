@@ -41,16 +41,21 @@ router.get(
     let sql = `
       SELECT
         e.alert_id,
+        e.taxi_id,
         e.driver_id,
         e.latitude,
         e.longitude,
         e.status,
+        e.message,
         e.created_at,
         d.full_name,
         d.email,
-        d.taxi_matricule
+        d.taxi_matricule,
+        t.driver_name AS taxi_driver_name,
+        t.phone AS taxi_phone
       FROM emergency_alerts e
       LEFT JOIN drivers d ON d.driver_id = e.driver_id
+      LEFT JOIN taxis t ON t.taxi_id = e.taxi_id
     `;
 
     if (where.length > 0) {
@@ -78,16 +83,21 @@ router.get(
       `
       SELECT
         e.alert_id,
+        e.taxi_id,
         e.driver_id,
         e.latitude,
         e.longitude,
         e.status,
+        e.message,
         e.created_at,
         d.full_name,
         d.email,
-        d.taxi_matricule
+        d.taxi_matricule,
+        t.driver_name AS taxi_driver_name,
+        t.phone AS taxi_phone
       FROM emergency_alerts e
       LEFT JOIN drivers d ON d.driver_id = e.driver_id
+      LEFT JOIN taxis t ON t.taxi_id = e.taxi_id
       WHERE e.alert_id = ?
       LIMIT 1
       `,
@@ -130,10 +140,12 @@ router.get(
       `
       SELECT
         e.alert_id,
+        e.taxi_id,
         e.driver_id,
         e.latitude,
         e.longitude,
         e.status,
+        e.message,
         e.created_at
       FROM emergency_alerts e
       WHERE ${where.join(' AND ')}
@@ -149,15 +161,18 @@ router.get(
 
 // Create an emergency alert
 // POST /api/emergency-alerts
-// { "driverId": 1, "latitude": 3.86, "longitude": 11.51 }
+// { "taxiId": "CM-TX-4589", "driverId": 1, "latitude": 3.86, "longitude": 11.51, "message": "Help needed" }
 router.post(
   '/',
   asyncHandler(async (req, res) => {
-    const { driverId, latitude = null, longitude = null } = req.body || {};
+    const { taxiId = null, driverId = null, latitude = null, longitude = null, message = null } = req.body || {};
 
-    const driverIdNum = parseInt(String(driverId), 10);
-    if (Number.isNaN(driverIdNum) || driverIdNum <= 0) {
-      return res.status(400).json({ error: 'Valid driverId is required' });
+    let driverIdNum = null;
+    if (driverId != null) {
+      driverIdNum = parseInt(String(driverId), 10);
+      if (Number.isNaN(driverIdNum) || driverIdNum <= 0) {
+        return res.status(400).json({ error: 'driverId must be a valid positive integer if provided' });
+      }
     }
 
     const latNum = latitude == null ? null : Number(latitude);
@@ -167,8 +182,8 @@ router.post(
     }
 
     const [result] = await db.query(
-      'INSERT INTO emergency_alerts (driver_id, latitude, longitude, status) VALUES (?, ?, ?, ?)',
-      [driverIdNum, latNum, lngNum, 'pending']
+      'INSERT INTO emergency_alerts (taxi_id, driver_id, latitude, longitude, status, message) VALUES (?, ?, ?, ?, ?, ?)',
+      [taxiId || null, driverIdNum, latNum, lngNum, 'pending', message || null]
     );
 
     res.status(201).json({ success: true, alertId: result.insertId });

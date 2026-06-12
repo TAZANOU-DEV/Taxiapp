@@ -29,6 +29,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
   List<Map<String, dynamic>> _drivers = [];
   List<Map<String, dynamic>> _orders = [];
   List<Map<String, dynamic>> _emergencies = [];
+  String _emergencyStatusFilter = 'all';
   final Map<int, String> _selectedOrderStatuses = {};
   final List<String> _orderStatusOptions = [
     'requested',
@@ -155,10 +156,14 @@ class _AdminDashboardState extends State<AdminDashboard> {
     final headers = await _authHeaders();
     if (headers.isEmpty) return;
 
-    final response = await http.get(
-      Uri.parse('$baseUrl/api/admin/emergencies?limit=20'),
-      headers: headers,
-    );
+    final queryParams = <String, String>{'limit': '50'};
+    if (_emergencyStatusFilter != 'all') {
+      queryParams['status'] = _emergencyStatusFilter;
+    }
+
+    final uri = Uri.parse('$baseUrl/api/admin/emergencies')
+        .replace(queryParameters: queryParams);
+    final response = await http.get(uri, headers: headers);
 
     if (response.statusCode != 200) {
       throw Exception('Emergency request failed: ${response.statusCode}');
@@ -497,6 +502,39 @@ class _AdminDashboardState extends State<AdminDashboard> {
           const SizedBox(height: 24),
           _sectionTitle('Emergency Alerts'),
           const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: DropdownButtonFormField<String>(
+                  value: _emergencyStatusFilter,
+                  decoration: const InputDecoration(
+                    labelText: 'Status filter',
+                    border: OutlineInputBorder(),
+                  ),
+                  items: const [
+                    DropdownMenuItem(value: 'all', child: Text('All')),
+                    DropdownMenuItem(value: 'pending', child: Text('Pending')),
+                    DropdownMenuItem(
+                        value: 'resolved', child: Text('Resolved')),
+                  ],
+                  onChanged: (value) {
+                    if (value == null) return;
+                    setState(() {
+                      _emergencyStatusFilter = value;
+                    });
+                    _fetchEmergencies();
+                  },
+                ),
+              ),
+              const SizedBox(width: 12),
+              ElevatedButton(
+                onPressed: _fetchEmergencies,
+                style: ElevatedButton.styleFrom(backgroundColor: Colors.black),
+                child: const Text('Refresh'),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
           if (_emergencies.isEmpty)
             const Text('No emergency alerts at the moment.')
           else
@@ -731,6 +769,14 @@ class _AdminDashboardState extends State<AdminDashboard> {
   }
 
   Widget _buildEmergencyCard(Map<String, dynamic> emergency) {
+    final driverName =
+        emergency['driver_name'] ?? emergency['taxi_driver_name'] ?? 'N/A';
+    final phone = emergency['taxi_phone'] ?? emergency['phone'] ?? 'N/A';
+    final taxiId = emergency['taxi_id'] ?? 'N/A';
+    final status = emergency['status'] ?? 'N/A';
+    final message = emergency['message'] ?? 'No additional details';
+    final createdAt = emergency['created_at'] ?? 'N/A';
+
     return Card(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
       elevation: 2,
@@ -740,16 +786,21 @@ class _AdminDashboardState extends State<AdminDashboard> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Alert #${emergency['id'] ?? 'N/A'}',
+            Text('Alert #${emergency['alert_id'] ?? emergency['id'] ?? 'N/A'}',
                 style:
                     const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
             const SizedBox(height: 8),
-            Text('Driver: ${emergency['driver_name'] ?? 'N/A'}'),
-            Text('Phone: ${emergency['phone'] ?? 'N/A'}'),
+            Text('Taxi ID: $taxiId'),
+            Text('Driver: $driverName'),
+            Text('Phone: $phone'),
+            Text('Status: ${status.toString().toUpperCase()}'),
+            const SizedBox(height: 8),
+            Text('Message: $message'),
+            const SizedBox(height: 8),
             Text(
-                'Location: ${emergency['lat'] ?? 'N/A'}, ${emergency['lng'] ?? 'N/A'}'),
+                'Location: ${emergency['latitude'] ?? emergency['lat'] ?? 'N/A'}, ${emergency['longitude'] ?? emergency['lng'] ?? 'N/A'}'),
             const SizedBox(height: 4),
-            Text('Created at: ${emergency['created_at'] ?? 'N/A'}'),
+            Text('Created at: $createdAt'),
           ],
         ),
       ),

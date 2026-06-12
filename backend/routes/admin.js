@@ -99,19 +99,39 @@ router.get('/stats', async (req, res) => {
 router.get('/emergencies', async (req, res) => {
   try {
     const limit = parseInt(req.query.limit) || 20;
-    const [emergencies] = await db.query(`
+    const status = req.query.status;
+    const params = [];
+
+    let sql = `
       SELECT
-        a.*,
-        t.driver_name,
-        t.phone,
-        t.lat,
-        t.lng
-      FROM activities a
-      LEFT JOIN taxis t ON a.taxi_id = t.taxi_id
-      WHERE a.type = 'emergency'
-      ORDER BY a.created_at DESC
-      LIMIT ?
-    `, [limit]);
+        e.alert_id,
+        e.taxi_id,
+        e.driver_id,
+        e.latitude,
+        e.longitude,
+        e.status,
+        e.message,
+        e.created_at,
+        d.full_name AS driver_name,
+        d.email AS driver_email,
+        d.taxi_matricule AS driver_taxi_matricule,
+        t.driver_name AS taxi_driver_name,
+        t.phone AS taxi_phone
+      FROM emergency_alerts e
+      LEFT JOIN drivers d ON d.driver_id = e.driver_id
+      LEFT JOIN taxis t ON t.taxi_id = e.taxi_id
+      WHERE 1 = 1
+    `;
+
+    if (status) {
+      sql += ' AND e.status = ?';
+      params.push(status);
+    }
+
+    sql += ' ORDER BY e.created_at DESC LIMIT ?';
+    params.push(limit);
+
+    const [emergencies] = await db.query(sql, params);
 
     res.json({ success: true, emergencies });
   } catch (error) {

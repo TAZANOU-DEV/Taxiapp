@@ -94,22 +94,32 @@ router.post('/emergency', asyncHandler(async (req, res) => {
   );
 
   const taxiInfo = taxiResults[0] || {};
+  let driverId = null;
 
-  // Mirror to legacy `emergency_alerts` table when possible (driver_id comes from `drivers` table)
   try {
     const [driverRows] = await db.query(
-      'SELECT d.driver_id FROM drivers d WHERE d.taxi_matricule = ? LIMIT 1',
-      [taxiInfo.license_plate || null]
+      `SELECT d.driver_id
+       FROM drivers d
+       JOIN taxis t ON d.taxi_matricule = t.license_plate
+       WHERE t.taxi_id = ?
+       LIMIT 1`,
+      [taxiId]
     );
 
     if (driverRows && driverRows.length > 0) {
-      await db.query(
-        'INSERT INTO emergency_alerts (driver_id, latitude, longitude, status) VALUES (?, ?, ?, ?)',
-        [driverRows[0].driver_id, lat || null, lng || null, 'pending']
-      );
+      driverId = driverRows[0].driver_id;
     }
   } catch (e) {
-    // Ignore if legacy tables don't exist.
+    console.warn('Legacy driver lookup failed:', e.message || e);
+  }
+
+  try {
+    await db.query(
+      'INSERT INTO emergency_alerts (taxi_id, driver_id, latitude, longitude, status, message) VALUES (?, ?, ?, ?, ?, ?)',
+      [taxiId, driverId, lat || null, lng || null, 'pending', message]
+    );
+  } catch (e) {
+    console.warn('Failed to save emergency alert to emergency_alerts table:', e.message || e);
   }
 
   // Log activity

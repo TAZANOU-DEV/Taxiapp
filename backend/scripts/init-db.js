@@ -117,20 +117,39 @@ const initDatabase = async () => {
     `);
     console.log('✅ Drivers table created');
 
-    // Create legacy emergency alerts table (driver-centric)
+    // Create legacy emergency alerts table (driver-centric and taxi-centric)
     await db.query(`
       CREATE TABLE IF NOT EXISTS emergency_alerts (
         alert_id INT NOT NULL AUTO_INCREMENT,
-        driver_id INT NOT NULL,
+        taxi_id VARCHAR(50) DEFAULT NULL,
+        driver_id INT DEFAULT NULL,
         latitude DECIMAL(10,7) DEFAULT NULL,
         longitude DECIMAL(10,7) DEFAULT NULL,
         status ENUM('pending','resolved') DEFAULT 'pending',
+        message TEXT DEFAULT NULL,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         PRIMARY KEY (alert_id),
+        INDEX idx_taxi (taxi_id),
         INDEX idx_driver (driver_id),
         INDEX idx_status (status)
       )
     `);
+
+    try {
+      await db.query(`ALTER TABLE emergency_alerts ADD COLUMN IF NOT EXISTS taxi_id VARCHAR(50) DEFAULT NULL`);
+    } catch (error) {
+      // Ignore if column already exists or DB version does not support IF NOT EXISTS.
+    }
+    try {
+      await db.query(`ALTER TABLE emergency_alerts MODIFY COLUMN driver_id INT DEFAULT NULL`);
+    } catch (error) {
+      // Ignore if modification is not needed.
+    }
+    try {
+      await db.query(`ALTER TABLE emergency_alerts ADD COLUMN IF NOT EXISTS message TEXT DEFAULT NULL`);
+    } catch (error) {
+      // Ignore if column already exists.
+    }
 
     // Create legacy activity table (driver-centric)
     await db.query(`

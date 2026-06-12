@@ -1,3 +1,6 @@
+
+// Plugin versions are declared in settings.gradle.kts to avoid duplicate classpath entries.
+
 allprojects {
     repositories {
         google()
