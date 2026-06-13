@@ -29,6 +29,8 @@ class _RegisterPageState extends State<RegisterPage> {
       TextEditingController();
 
   String? _matriculeError;
+  bool _passwordVisible = false;
+  bool _confirmPasswordVisible = false;
 
   // Enhanced matricule validation with specific error messages
   String? _validateMatricule(String matricule) {
@@ -249,7 +251,7 @@ class _RegisterPageState extends State<RegisterPage> {
               const SizedBox(height: 15),
               TextField(
                 controller: _passwordController,
-                obscureText: true,
+                obscureText: !_passwordVisible,
                 decoration: InputDecoration(
                   labelText: "Password (min 6 characters)",
                   border: OutlineInputBorder(
@@ -257,12 +259,24 @@ class _RegisterPageState extends State<RegisterPage> {
                   ),
                   filled: true,
                   fillColor: Colors.white,
+                  suffixIcon: IconButton(
+                    icon: Icon(
+                      _passwordVisible
+                          ? Icons.visibility
+                          : Icons.visibility_off,
+                    ),
+                    onPressed: () {
+                      setState(() {
+                        _passwordVisible = !_passwordVisible;
+                      });
+                    },
+                  ),
                 ),
               ),
               const SizedBox(height: 15),
               TextField(
                 controller: _confirmPasswordController,
-                obscureText: true,
+                obscureText: !_confirmPasswordVisible,
                 decoration: InputDecoration(
                   labelText: "Confirm Password",
                   border: OutlineInputBorder(
@@ -270,6 +284,18 @@ class _RegisterPageState extends State<RegisterPage> {
                   ),
                   filled: true,
                   fillColor: Colors.white,
+                  suffixIcon: IconButton(
+                    icon: Icon(
+                      _confirmPasswordVisible
+                          ? Icons.visibility
+                          : Icons.visibility_off,
+                    ),
+                    onPressed: () {
+                      setState(() {
+                        _confirmPasswordVisible = !_confirmPasswordVisible;
+                      });
+                    },
+                  ),
                 ),
               ),
               const SizedBox(height: 30),

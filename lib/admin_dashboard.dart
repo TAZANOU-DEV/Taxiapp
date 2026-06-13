@@ -40,6 +40,61 @@ class _AdminDashboardState extends State<AdminDashboard> {
     'cancelled',
   ];
 
+  int get _totalDrivers =>
+      int.tryParse(_stats['total_drivers']?.toString() ?? '') ?? 0;
+  int get _onlineDrivers =>
+      int.tryParse(_stats['online_taxis']?.toString() ?? '') ?? 0;
+  int get _totalTaxis =>
+      int.tryParse(_stats['total_taxis']?.toString() ?? '') ?? 0;
+  int get _activeOrders =>
+      int.tryParse(_stats['active_orders']?.toString() ?? '') ?? _orders.length;
+  int get _completedOrders =>
+      int.tryParse(_stats['completed_orders']?.toString() ?? '') ?? 0;
+  int get _todayEmergencies =>
+      int.tryParse(_stats['today_emergencies']?.toString() ?? '') ??
+      _emergencies.length;
+  int get _totalOrders =>
+      int.tryParse(_stats['total_orders']?.toString() ?? '') ?? _orders.length;
+  double get _completionRate =>
+      _totalOrders > 0 ? _completedOrders / _totalOrders : 0.0;
+  double get _availabilityRate =>
+      _totalDrivers > 0 ? _onlineDrivers / _totalDrivers : 0.0;
+
+  int _orderCountByStatus(String status) {
+    return _orders
+        .where((order) => order['status']?.toString() == status)
+        .length;
+  }
+
+  int _emergencyCountByStatus(String status) {
+    return _emergencies
+        .where((item) => item['status']?.toString() == status)
+        .length;
+  }
+
+  Color _statusColor(String status) {
+    switch (status) {
+      case 'requested':
+        return Colors.blue;
+      case 'accepted':
+        return Colors.indigo;
+      case 'on_way':
+        return Colors.orange;
+      case 'arrived':
+        return Colors.teal;
+      case 'completed':
+        return Colors.green;
+      case 'cancelled':
+        return Colors.red;
+      case 'pending':
+        return Colors.orange;
+      case 'resolved':
+        return Colors.green;
+      default:
+        return Colors.grey;
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -50,7 +105,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
     final prefs = await SharedPreferences.getInstance();
     final token = prefs.getString('token');
     if (token == null) {
-      if (mounted) _logout();
+      _logout();
       return {};
     }
     return {
@@ -65,60 +120,22 @@ class _AdminDashboardState extends State<AdminDashboard> {
       _error = null;
     });
 
-    final errors = <String>[];
-    await Future.wait([
-      _fetchStats().catchError(
-        (error) => errors.add(_formatFetchError('Stats', error)),
-      ),
-      _fetchDrivers().catchError(
-        (error) => errors.add(_formatFetchError('Drivers', error)),
-      ),
-      _fetchOrders().catchError(
-        (error) => errors.add(_formatFetchError('Orders', error)),
-      ),
-      _fetchEmergencies().catchError(
-        (error) => errors.add(_formatFetchError('Emergencies', error)),
-      ),
-    ]);
-
-    if (!mounted) return;
-    setState(() {
-      _error = errors.isEmpty ? null : errors.join('\n');
-      _isLoading = false;
-    });
-  }
-
-  int _asInt(dynamic value) {
-    if (value == null) return 0;
-    if (value is int) return value;
-    if (value is num) return value.toInt();
-    return int.tryParse(value.toString()) ?? 0;
-  }
-
-  List<Map<String, dynamic>> _asMapList(dynamic value) {
-    if (value is! List) return [];
-
-    return value
-        .whereType<Map<String, dynamic>>()
-        .map((item) => Map<String, dynamic>.from(item))
-        .toList();
-  }
-
-  String _formatFetchError(String label, Object error) {
-    final message = error.toString().replaceFirst('Exception: ', '');
-    return '$label: $message';
-  }
-
-  String _responseMessage(http.Response response, String fallback) {
     try {
-      final data = jsonDecode(response.body);
-      if (data is Map<String, dynamic>) {
-        return (data['error'] ?? data['message'] ?? fallback).toString();
-      }
-    } catch (_) {
-      return fallback;
+      await Future.wait([
+        _fetchStats(),
+        _fetchDrivers(),
+        _fetchOrders(),
+        _fetchEmergencies(),
+      ]);
+    } catch (error) {
+      setState(() {
+        _error = error.toString();
+      });
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
     }
-    return fallback;
   }
 
   Future<void> _fetchStats() async {
@@ -131,10 +148,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
     );
 
     if (response.statusCode != 200) {
-      throw Exception(_responseMessage(
-        response,
-        'Stats request failed: ${response.statusCode}',
-      ));
+      throw Exception('Stats request failed: ${response.statusCode}');
     }
 
     final data = jsonDecode(response.body);
@@ -142,7 +156,6 @@ class _AdminDashboardState extends State<AdminDashboard> {
       throw Exception(data['error'] ?? 'Failed to fetch stats');
     }
 
-    if (!mounted) return;
     setState(() {
       _stats = Map<String, dynamic>.from(data['stats'] ?? {});
     });
@@ -158,10 +171,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
     );
 
     if (response.statusCode != 200) {
-      throw Exception(_responseMessage(
-        response,
-        'Drivers request failed: ${response.statusCode}',
-      ));
+      throw Exception('Drivers request failed: ${response.statusCode}');
     }
 
     final data = jsonDecode(response.body);
@@ -169,9 +179,8 @@ class _AdminDashboardState extends State<AdminDashboard> {
       throw Exception(data['error'] ?? 'Failed to fetch drivers');
     }
 
-    if (!mounted) return;
     setState(() {
-      _drivers = _asMapList(data['drivers']);
+      _drivers = List<Map<String, dynamic>>.from(data['drivers'] ?? []);
     });
   }
 
@@ -185,10 +194,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
     );
 
     if (response.statusCode != 200) {
-      throw Exception(_responseMessage(
-        response,
-        'Orders request failed: ${response.statusCode}',
-      ));
+      throw Exception('Orders request failed: ${response.statusCode}');
     }
 
     final data = jsonDecode(response.body);
@@ -196,9 +202,8 @@ class _AdminDashboardState extends State<AdminDashboard> {
       throw Exception(data['error'] ?? 'Failed to fetch orders');
     }
 
-    if (!mounted) return;
     setState(() {
-      _orders = _asMapList(data['orders']);
+      _orders = List<Map<String, dynamic>>.from(data['orders'] ?? []);
     });
   }
 
@@ -216,10 +221,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
     final response = await http.get(uri, headers: headers);
 
     if (response.statusCode != 200) {
-      throw Exception(_responseMessage(
-        response,
-        'Emergency request failed: ${response.statusCode}',
-      ));
+      throw Exception('Emergency request failed: ${response.statusCode}');
     }
 
     final data = jsonDecode(response.body);
@@ -227,9 +229,8 @@ class _AdminDashboardState extends State<AdminDashboard> {
       throw Exception(data['error'] ?? 'Failed to fetch emergencies');
     }
 
-    if (!mounted) return;
     setState(() {
-      _emergencies = _asMapList(data['emergencies']);
+      _emergencies = List<Map<String, dynamic>>.from(data['emergencies'] ?? []);
     });
   }
 
@@ -298,7 +299,6 @@ class _AdminDashboardState extends State<AdminDashboard> {
   }
 
   void _showSnackBar(String message, {Color color = Colors.red}) {
-    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message),
@@ -318,9 +318,8 @@ class _AdminDashboardState extends State<AdminDashboard> {
         return DrvierDetailSheet(
           driver: driver,
           onStatusToggle: (bool toOnline) {
-            final taxiId = driver['taxi_id']?.toString();
-            if (taxiId != null && taxiId.isNotEmpty) {
-              _updateTaxiStatus(taxiId, toOnline);
+            if (driver['taxi_id'] != null) {
+              _updateTaxiStatus(driver['taxi_id'], toOnline);
             }
           },
         );
@@ -355,7 +354,29 @@ class _AdminDashboardState extends State<AdminDashboard> {
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
-          : _buildDashboardBody(),
+          : _error != null
+              ? Center(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 24),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          'Error: $_error',
+                          style:
+                              const TextStyle(color: Colors.red, fontSize: 16),
+                          textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: 16),
+                        ElevatedButton(
+                          onPressed: _refreshAll,
+                          child: const Text('Retry'),
+                        ),
+                      ],
+                    ),
+                  ),
+                )
+              : _buildSelectedTab(),
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _selectedTab.index,
         onTap: (index) {
@@ -395,62 +416,150 @@ class _AdminDashboardState extends State<AdminDashboard> {
     }
   }
 
-  Widget _buildDashboardBody() {
-    return Column(
-      children: [
-        if (_error != null) _buildErrorBanner(),
-        Expanded(child: _buildSelectedTab()),
-      ],
+  Widget _buildOverviewTab() {
+    return RefreshIndicator(
+      onRefresh: _refreshAll,
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildDashboardHeader(),
+            const SizedBox(height: 24),
+            _sectionTitle('Key metrics'),
+            const SizedBox(height: 12),
+            _buildSummaryCards(),
+            const SizedBox(height: 24),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(child: _buildOrderStatusBreakdownCard()),
+                const SizedBox(width: 16),
+                Expanded(child: _buildDriverAvailabilityCard()),
+              ],
+            ),
+            const SizedBox(height: 24),
+            _buildEmergencyTrendCard(),
+            const SizedBox(height: 24),
+            _buildRecentActivitySection(),
+          ],
+        ),
+      ),
     );
   }
 
-  Widget _buildErrorBanner() {
+  Widget _buildDashboardHeader() {
     return Container(
-      width: double.infinity,
-      margin: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: Colors.red[50],
-        border: Border.all(color: Colors.red.shade200),
-        borderRadius: BorderRadius.circular(12),
+        gradient: const LinearGradient(
+          colors: [Color(0xFF161A2B), Color(0xFF1E213A)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.14),
+            blurRadius: 18,
+            offset: const Offset(0, 8),
+          ),
+        ],
       ),
-      child: Row(
+      padding: const EdgeInsets.all(24),
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(Icons.error_outline, color: Colors.red[700]),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              _error!,
-              style: TextStyle(color: Colors.red[800]),
-            ),
+          Row(
+            children: [
+              Container(
+                width: 56,
+                height: 56,
+                decoration: BoxDecoration(
+                  color: Colors.yellow[700],
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child:
+                    const Icon(Icons.analytics, color: Colors.black, size: 32),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: const [
+                    Text(
+                      'Admin dashboard',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 22,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    SizedBox(height: 4),
+                    Text(
+                      'Insightful analytics for drivers, orders, and alerts.',
+                      style: TextStyle(color: Colors.white70, fontSize: 14),
+                    ),
+                  ],
+                ),
+              ),
+              ElevatedButton.icon(
+                onPressed: _refreshAll,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.yellow[700],
+                  foregroundColor: Colors.black,
+                ),
+                icon: const Icon(Icons.refresh),
+                label: const Text('Refresh'),
+              ),
+            ],
           ),
-          TextButton(
-            onPressed: _refreshAll,
-            child: const Text('Retry'),
+          const SizedBox(height: 20),
+          Wrap(
+            spacing: 12,
+            runSpacing: 12,
+            children: [
+              _buildOverviewPill(
+                  'Online drivers', '$_onlineDrivers', Colors.green),
+              _buildOverviewPill(
+                  'Active orders', '$_activeOrders', Colors.orange),
+              _buildOverviewPill(
+                  'Today alerts', '$_todayEmergencies', Colors.red),
+            ],
           ),
         ],
       ),
     );
   }
 
-  Widget _buildOverviewTab() {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+  Widget _buildOverviewPill(String label, String value, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.12),
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          _sectionTitle('Summary'),
-          const SizedBox(height: 12),
-          _buildSummaryCards(),
-          const SizedBox(height: 24),
-          _sectionTitle('Performance Overview'),
-          const SizedBox(height: 12),
-          _buildTrendsCard(),
-          const SizedBox(height: 24),
-          _sectionTitle('Live Driver Status'),
-          const SizedBox(height: 12),
-          _buildDriverStatusCard(),
+          Container(
+            width: 8,
+            height: 8,
+            decoration: BoxDecoration(
+              color: color,
+              shape: BoxShape.circle,
+            ),
+          ),
+          const SizedBox(width: 10),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(label,
+                  style: const TextStyle(color: Colors.black54, fontSize: 12)),
+              Text(value,
+                  style: TextStyle(
+                      color: color, fontWeight: FontWeight.bold, fontSize: 14)),
+            ],
+          ),
         ],
       ),
     );
@@ -466,44 +575,69 @@ class _AdminDashboardState extends State<AdminDashboard> {
             )
           : ListView.separated(
               padding: const EdgeInsets.all(16),
-              itemCount: _drivers.length,
               separatorBuilder: (_, __) => const SizedBox(height: 12),
+              itemCount: _drivers.length + 1,
               itemBuilder: (context, index) {
-                final driver = _drivers[index];
+                if (index == 0) {
+                  return _buildDriverSummaryCard();
+                }
+                final driver = _drivers[index - 1];
+                final isOnline =
+                    driver['is_online'] == 1 || driver['is_online'] == true;
                 return Card(
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16),
+                    borderRadius: BorderRadius.circular(18),
                   ),
-                  elevation: 3,
+                  elevation: 4,
                   child: Padding(
-                    padding: const EdgeInsets.all(16),
+                    padding: const EdgeInsets.all(18),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Row(
                           children: [
-                            Expanded(
+                            CircleAvatar(
+                              radius: 24,
+                              backgroundColor: Colors.yellow[700],
                               child: Text(
-                                driver['username'] ?? 'Unknown driver',
+                                (driver['username'] ?? 'U')
+                                    .toString()
+                                    .substring(0, 1)
+                                    .toUpperCase(),
                                 style: const TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.bold,
-                                ),
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.black),
+                              ),
+                            ),
+                            const SizedBox(width: 14),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    driver['username'] ?? 'Unknown driver',
+                                    style: const TextStyle(
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    driver['email'] ?? 'No email provided',
+                                    style:
+                                        const TextStyle(color: Colors.black54),
+                                  ),
+                                ],
                               ),
                             ),
                             Chip(
-                              backgroundColor: (driver['is_online'] == 1 ||
-                                      driver['is_online'] == true)
+                              backgroundColor: isOnline
                                   ? Colors.green[100]
                                   : Colors.grey[200],
                               label: Text(
-                                (driver['is_online'] == 1 ||
-                                        driver['is_online'] == true)
-                                    ? 'Online'
-                                    : 'Offline',
+                                isOnline ? 'Online' : 'Offline',
                                 style: TextStyle(
-                                  color: (driver['is_online'] == 1 ||
-                                          driver['is_online'] == true)
+                                  color: isOnline
                                       ? Colors.green[800]
                                       : Colors.grey[700],
                                 ),
@@ -511,42 +645,42 @@ class _AdminDashboardState extends State<AdminDashboard> {
                             ),
                           ],
                         ),
-                        const SizedBox(height: 8),
-                        Text('Email: ${driver['email'] ?? 'N/A'}'),
-                        Text('Phone: ${driver['user_phone'] ?? 'N/A'}'),
-                        const SizedBox(height: 4),
-                        Text('Taxi ID: ${driver['taxi_id'] ?? 'N/A'}'),
-                        Text('Plate: ${driver['license_plate'] ?? 'N/A'}'),
-                        if (driver['lat'] != null && driver['lng'] != null)
-                          Text('Location: ${driver['lat']}, ${driver['lng']}'),
-                        const SizedBox(height: 12),
+                        const SizedBox(height: 14),
+                        Wrap(
+                          spacing: 12,
+                          runSpacing: 8,
+                          children: [
+                            _buildDriverDetailChip(
+                                'Taxi', driver['taxi_id'] ?? 'N/A'),
+                            _buildDriverDetailChip(
+                                'Plate', driver['license_plate'] ?? 'N/A'),
+                            _buildDriverDetailChip(
+                                'Phone', driver['user_phone'] ?? 'N/A'),
+                          ],
+                        ),
+                        const SizedBox(height: 16),
                         Row(
                           children: [
-                            ElevatedButton(
-                              onPressed: () => _openDriverDetail(driver),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.black,
+                            Expanded(
+                              child: ElevatedButton(
+                                onPressed: () => _openDriverDetail(driver),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.black,
+                                ),
+                                child: const Text('Details'),
                               ),
-                              child: const Text('Details'),
                             ),
                             const SizedBox(width: 12),
-                            OutlinedButton(
-                              onPressed: driver['taxi_id'] == null
-                                  ? null
-                                  : () {
-                                      final isOnline =
-                                          driver['is_online'] == 1 ||
-                                              driver['is_online'] == true;
-                                      _updateTaxiStatus(
-                                        driver['taxi_id'].toString(),
-                                        !isOnline,
-                                      );
-                                    },
-                              child: Text(
-                                (driver['is_online'] == 1 ||
-                                        driver['is_online'] == true)
-                                    ? 'Set Offline'
-                                    : 'Set Online',
+                            Expanded(
+                              child: OutlinedButton(
+                                onPressed: driver['taxi_id'] == null
+                                    ? null
+                                    : () {
+                                        _updateTaxiStatus(
+                                            driver['taxi_id'], !isOnline);
+                                      },
+                                child: Text(
+                                    isOnline ? 'Set Offline' : 'Set Online'),
                               ),
                             ),
                           ],
@@ -560,13 +694,55 @@ class _AdminDashboardState extends State<AdminDashboard> {
     );
   }
 
+  Widget _buildDriverSummaryCard() {
+    final offlineDrivers = _totalDrivers - _onlineDrivers;
+    return Card(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+      elevation: 4,
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Driver performance',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 12),
+            Text('Total drivers: $_totalDrivers',
+                style: const TextStyle(fontSize: 14)),
+            Text('Online now: $_onlineDrivers',
+                style: const TextStyle(fontSize: 14)),
+            Text('Offline now: $offlineDrivers',
+                style: const TextStyle(fontSize: 14)),
+            const SizedBox(height: 16),
+            LinearProgressIndicator(
+              value: _availabilityRate,
+              minHeight: 10,
+              color: Colors.green,
+              backgroundColor: Colors.grey[300],
+            ),
+            const SizedBox(height: 8),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text('${(_availabilityRate * 100).round()}% available',
+                    style: const TextStyle(fontWeight: FontWeight.bold)),
+                Text('$offlineDrivers offline',
+                    style: const TextStyle(color: Colors.black54)),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildManagementTab() {
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _sectionTitle('Order Management'),
+          _sectionTitle('Order management'),
           const SizedBox(height: 12),
           if (_orders.isEmpty)
             const Text('No orders available at this time.')
@@ -575,7 +751,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
               children: _orders.map(_buildOrderManagementCard).toList(),
             ),
           const SizedBox(height: 24),
-          _sectionTitle('Emergency Alerts'),
+          _sectionTitle('Emergency alerts'),
           const SizedBox(height: 12),
           Row(
             children: [
@@ -583,7 +759,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                 child: DropdownButtonFormField<String>(
                   value: _emergencyStatusFilter,
                   decoration: const InputDecoration(
-                    labelText: 'Status filter',
+                    labelText: 'Filter status',
                     border: OutlineInputBorder(),
                   ),
                   items: const [
@@ -617,11 +793,11 @@ class _AdminDashboardState extends State<AdminDashboard> {
               children: _emergencies.map(_buildEmergencyCard).toList(),
             ),
           const SizedBox(height: 24),
-          _sectionTitle('Driver Quick Actions'),
+          _sectionTitle('Driver quick actions'),
           const SizedBox(height: 12),
           _buildManagementActionCard(
             'Refresh all data',
-            'Reload drivers, orders, and emergency alerts from the database.',
+            'Reload drivers, orders, and emergency alerts.',
             Icons.refresh,
             _refreshAll,
           ),
@@ -631,25 +807,38 @@ class _AdminDashboardState extends State<AdminDashboard> {
   }
 
   Widget _buildOrderManagementCard(Map<String, dynamic> order) {
-    final orderId = _asInt(order['id']);
-    final rawStatus = _selectedOrderStatuses[orderId] ??
+    final orderId = order['id'] ?? 0;
+    final currentStatus = _selectedOrderStatuses[orderId] ??
         order['status']?.toString() ??
         'requested';
-    final currentStatus =
-        _orderStatusOptions.contains(rawStatus) ? rawStatus : 'requested';
+    final statusLabel = currentStatus.replaceAll('_', ' ').toUpperCase();
     return Card(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-      elevation: 2,
-      margin: const EdgeInsets.only(bottom: 12),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      elevation: 3,
+      margin: const EdgeInsets.only(bottom: 14),
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(18),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Order #$orderId',
-                style:
-                    const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(
+                  child: Text('Order #$orderId',
+                      style: const TextStyle(
+                          fontSize: 16, fontWeight: FontWeight.bold)),
+                ),
+                Chip(
+                  backgroundColor:
+                      _statusColor(currentStatus).withOpacity(0.14),
+                  label: Text(statusLabel,
+                      style: TextStyle(
+                          color: _statusColor(currentStatus),
+                          fontWeight: FontWeight.w600)),
+                ),
+              ],
+            ),
+            const SizedBox(height: 14),
             Row(
               children: [
                 Expanded(
@@ -678,7 +867,8 @@ class _AdminDashboardState extends State<AdminDashboard> {
                 ElevatedButton(
                   onPressed: () {
                     final selectedStatus = _selectedOrderStatuses[orderId] ??
-                        currentStatus;
+                        order['status']?.toString() ??
+                        'requested';
                     _updateOrderStatus(orderId, selectedStatus);
                   },
                   style: ElevatedButton.styleFrom(
@@ -689,21 +879,40 @@ class _AdminDashboardState extends State<AdminDashboard> {
                 ),
               ],
             ),
-            const SizedBox(height: 14),
-            Text(
-                'From driver: ${order['from_driver'] ?? order['from_driver_name'] ?? 'N/A'}'),
-            Text(
-                'To driver: ${order['to_driver'] ?? order['to_driver_name'] ?? 'N/A'}'),
-            const SizedBox(height: 4),
-            Text('Created: ${order['created_at'] ?? 'N/A'}'),
-            Text(
-                'Pickup: ${order['pickup_lat'] ?? 'N/A'}, ${order['pickup_lng'] ?? 'N/A'}'),
-            Text(
-                'Dropoff: ${order['dropoff_lat'] ?? 'N/A'}, ${order['dropoff_lng'] ?? 'N/A'}'),
-            const SizedBox(height: 4),
-            Text('Notes: ${order['reason'] ?? 'N/A'}'),
+            const SizedBox(height: 16),
+            _buildDetailRow('From',
+                '${order['from_driver'] ?? order['from_driver_name'] ?? 'N/A'}'),
+            _buildDetailRow('To',
+                '${order['to_driver'] ?? order['to_driver_name'] ?? 'N/A'}'),
+            _buildDetailRow('Created', '${order['created_at'] ?? 'N/A'}'),
+            _buildDetailRow('Pickup',
+                '${order['pickup_lat'] ?? 'N/A'}, ${order['pickup_lng'] ?? 'N/A'}'),
+            _buildDetailRow('Dropoff',
+                '${order['dropoff_lat'] ?? 'N/A'}, ${order['dropoff_lng'] ?? 'N/A'}'),
+            _buildDetailRow('Notes', '${order['reason'] ?? 'N/A'}'),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildDetailRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        children: [
+          Expanded(
+            flex: 2,
+            child: Text(
+              '$label:',
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
+          ),
+          Expanded(
+            flex: 3,
+            child: Text(value, textAlign: TextAlign.right),
+          ),
+        ],
       ),
     );
   }
@@ -737,82 +946,543 @@ class _AdminDashboardState extends State<AdminDashboard> {
   }
 
   Widget _buildSummaryCards() {
-    return GridView.count(
-      crossAxisCount: MediaQuery.of(context).size.width > 700 ? 4 : 2,
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      crossAxisSpacing: 16,
-      mainAxisSpacing: 16,
+    return Wrap(
+      spacing: 16,
+      runSpacing: 16,
       children: [
-        _infoCard('Online taxis', _asInt(_stats['online_taxis']).toString(),
-            Colors.green),
-        _infoCard('Total taxis', _asInt(_stats['total_taxis']).toString(),
-            Colors.blue),
-        _infoCard('Active orders', _asInt(_stats['active_orders']).toString(),
-            Colors.orange),
-        _infoCard('Completed orders',
-            _asInt(_stats['completed_orders']).toString(), Colors.purple),
+        _buildAnalyticsCard(
+            'Total drivers', '$_totalDrivers', 'Drivers onboard', Colors.blue),
+        _buildAnalyticsCard('Online taxis', '$_onlineDrivers',
+            'Currently active', Colors.green),
+        _buildAnalyticsCard(
+            'Active orders', '$_activeOrders', 'In progress', Colors.orange),
+        _buildAnalyticsCard('Completed orders', '$_completedOrders',
+            'Fulfilled today', Colors.purple),
+        _buildAnalyticsCard(
+            'Total taxis', '$_totalTaxis', 'Fleet size', Colors.cyan),
+        _buildAnalyticsCard('Today alerts', '$_todayEmergencies',
+            'Emergency warnings', Colors.red),
       ],
     );
   }
 
-  Widget _buildTrendsCard() {
-    final totalOrders = _asInt(_stats['total_orders']);
-    final activeOrders = _asInt(_stats['active_orders']);
-    final completedOrders = _asInt(_stats['completed_orders']);
+  Widget _buildAnalyticsCard(
+      String title, String value, String subtitle, Color color) {
+    return SizedBox(
+      width: MediaQuery.of(context).size.width > 900
+          ? 280
+          : MediaQuery.of(context).size.width / 2 - 28,
+      child: HoverCard(
+        child: Container(
+          padding: const EdgeInsets.all(18),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(18),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(title, style: const TextStyle(color: Colors.black54)),
+              const SizedBox(height: 14),
+              Text(value,
+                  style: TextStyle(
+                    fontSize: 32,
+                    fontWeight: FontWeight.bold,
+                    color: color,
+                  )),
+              const SizedBox(height: 6),
+              Text(subtitle, style: const TextStyle(color: Colors.black54)),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildOrderStatusBreakdownCard() {
+    final statuses = [
+      'requested',
+      'accepted',
+      'on_way',
+      'arrived',
+      'completed',
+      'cancelled'
+    ];
+    final counts = statuses.map(_orderCountByStatus).toList();
+    final maxCount =
+        counts.fold<int>(1, (prev, value) => value > prev ? value : prev);
     return Card(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
       elevation: 3,
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(18),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('Order distribution',
+            const Text('Order status breakdown',
                 style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
             const SizedBox(height: 16),
-            _buildProgressBar(
-                'Active', activeOrders, totalOrders, Colors.orange),
-            const SizedBox(height: 12),
-            _buildProgressBar(
-                'Completed', completedOrders, totalOrders, Colors.green),
-            const SizedBox(height: 20),
-            const Text('Driver activity',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 12),
-            _buildTrendBars(),
+            ...List.generate(statuses.length, (index) {
+              final status = statuses[index];
+              final count = counts[index];
+              final widthFactor = maxCount > 0 ? count / maxCount : 0.0;
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(status.replaceAll('_', ' ').toUpperCase()),
+                        Text('$count',
+                            style:
+                                const TextStyle(fontWeight: FontWeight.bold)),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(10),
+                      child: LinearProgressIndicator(
+                        value: widthFactor,
+                        minHeight: 10,
+                        backgroundColor: Colors.grey[200],
+                        valueColor:
+                            AlwaysStoppedAnimation(_statusColor(status)),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }),
+            if (_totalOrders == 0)
+              const Text('No order data available yet.',
+                  style: TextStyle(color: Colors.black54))
+            else
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Text('Total tracked orders: $_totalOrders',
+                    style: const TextStyle(color: Colors.black54)),
+              ),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildDriverStatusCard() {
-    final totalDrivers = _asInt(_stats['total_drivers']);
-    final onlineDrivers = _asInt(_stats['online_taxis']);
+  Widget _buildDriverAvailabilityCard() {
+    final offlineDrivers = _totalDrivers - _onlineDrivers;
     return Card(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
       elevation: 3,
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(18),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text('Driver availability',
                 style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 12),
-            Text('Total drivers: $totalDrivers'),
-            Text('Drivers online: $onlineDrivers'),
-            const SizedBox(height: 12),
-            LinearProgressIndicator(
-              value: totalDrivers > 0 ? onlineDrivers / totalDrivers : 0,
-              color: Colors.green,
-              backgroundColor: Colors.grey[300],
-              minHeight: 10,
+            const SizedBox(height: 20),
+            Center(
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  SizedBox(
+                    width: 140,
+                    height: 140,
+                    child: CircularProgressIndicator(
+                      value: _availabilityRate,
+                      strokeWidth: 14,
+                      backgroundColor: Colors.grey[200],
+                      valueColor: AlwaysStoppedAnimation(Colors.green),
+                    ),
+                  ),
+                  Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text('${(_availabilityRate * 100).round()}%',
+                          style: const TextStyle(
+                              fontSize: 28, fontWeight: FontWeight.bold)),
+                      const SizedBox(height: 4),
+                      const Text('Available',
+                          style: TextStyle(color: Colors.black54)),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 20),
+            _buildStatusPill('Online', '$_onlineDrivers', Colors.green),
+            const SizedBox(height: 10),
+            _buildStatusPill('Offline', '$offlineDrivers', Colors.grey),
+            const SizedBox(height: 10),
+            _buildStatusPill('Fleet size', '$_totalTaxis', Colors.cyan),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEmergencyTrendCard() {
+    final statuses = [
+      'requested',
+      'accepted',
+      'on_way',
+      'arrived',
+      'completed',
+      'cancelled'
+    ];
+    final counts = statuses.map(_orderCountByStatus).toList();
+    final pending = _emergencyCountByStatus('pending');
+    final resolved = _emergencyCountByStatus('resolved');
+    final totalAlerts = _emergencies.length;
+    return HoverCard(
+      child: Container(
+        padding: const EdgeInsets.all(18),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(18),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Business insights',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 16),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(child: _buildPieChartSection(statuses, counts)),
+                const SizedBox(width: 18),
+                Expanded(child: _buildAlertOverviewSection(pending, resolved, totalAlerts)),
+              ],
             ),
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildPieChartSection(List<String> statuses, List<int> counts) {
+    final total = counts.fold<int>(0, (sum, value) => sum + value);
+    final data = List.generate(statuses.length, (index) {
+      return {
+        'label': statuses[index].replaceAll('_', ' ').toUpperCase(),
+        'count': counts[index],
+        'color': _statusColor(statuses[index]),
+      };
+    });
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text('Order status split', style: TextStyle(fontWeight: FontWeight.bold)),
+        const SizedBox(height: 14),
+        Center(
+          child: SizedBox(
+            width: 180,
+            height: 180,
+            child: CustomPaint(
+              painter: _PieChartPainter(
+                values: counts.map((count) => count.toDouble()).toList(),
+                colors: data.map((item) => item['color'] as Color).toList(),
+              ),
+              child: Center(
+                child: Text(
+                  '$total',
+                  style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+                ),
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
+        Wrap(
+          spacing: 10,
+          runSpacing: 10,
+          children: data
+              .where((segment) => segment['count'] as int > 0)
+              .map((segment) => _buildLegendItem(
+                    segment['label'] as String,
+                    segment['count'] as int,
+                    segment['color'] as Color,
+                    total,
+                  ))
+              .toList(),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildAlertOverviewSection(int pending, int resolved, int totalAlerts) {
+    final maxAlert = totalAlerts > 0 ? totalAlerts : 1;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text('Alert response metrics', style: TextStyle(fontWeight: FontWeight.bold)),
+        const SizedBox(height: 14),
+        _buildStatusPill('Pending', '$pending', Colors.orange),
+        const SizedBox(height: 10),
+        _buildStatusPill('Resolved', '$resolved', Colors.green),
+        const SizedBox(height: 16),
+        const Text('Alert trend', style: TextStyle(fontWeight: FontWeight.bold)),
+        const SizedBox(height: 12),
+        Container(
+          height: 120,
+          decoration: BoxDecoration(
+            color: Colors.grey[100],
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                _buildBarIndicator('Pending', pending, maxAlert, Colors.orange),
+                const SizedBox(width: 12),
+                _buildBarIndicator('Resolved', resolved, maxAlert, Colors.green),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
+        Text('Total alerts: $totalAlerts', style: const TextStyle(color: Colors.black54)),
+      ],
+    );
+  }
+
+  Widget _buildBarIndicator(String label, int value, int maxValue, Color color) {
+    final heightFactor = maxValue > 0 ? value / maxValue : 0.0;
+    return Expanded(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.end,
+        children: [
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 350),
+            height: 80 * heightFactor + 10,
+            width: double.infinity,
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.18),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            alignment: Alignment.topCenter,
+            child: Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(
+                '$value',
+                style: TextStyle(color: color, fontWeight: FontWeight.bold),
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(label, textAlign: TextAlign.center, style: const TextStyle(fontSize: 12, color: Colors.black54)),
+          const SizedBox(height: 4),
+          Text('${((heightFactor) * 100).round()}%', style: const TextStyle(fontWeight: FontWeight.bold)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLegendItem(String label, int count, Color color, int total) {
+    final percentage = total > 0 ? ((count / total) * 100).round() : 0;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.grey[100],
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(width: 10, height: 10, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
+          const SizedBox(width: 8),
+          Text('$label • $count ($percentage%)', style: const TextStyle(fontSize: 12)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAlertSparkline() {
+    final counts = [
+      _emergencyCountByStatus('pending'),
+      _emergencyCountByStatus('resolved'),
+      _emergencyCountByStatus('pending'),
+      _emergencyCountByStatus('resolved'),
+    ];
+    final maxCount =
+        counts.fold<int>(1, (prev, value) => value > prev ? value : prev);
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: counts.map((count) {
+        final barHeight = maxCount > 0 ? (count / maxCount) * 90 : 8;
+        return Expanded(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              Container(
+                height: barHeight < 12 ? 12 : barHeight,
+                width: 12,
+                decoration: BoxDecoration(
+                  color: Colors.redAccent,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text('$count',
+                  style: const TextStyle(fontSize: 12, color: Colors.black54)),
+            ],
+          ),
+        );
+      }).toList(),
+    );
+  }
+
+  Widget _buildRecentActivitySection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _sectionTitle('Recent activity'),
+        const SizedBox(height: 12),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(child: _buildRecentOrdersPreview()),
+            const SizedBox(width: 16),
+            Expanded(child: _buildRecentAlertsPreview()),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildRecentOrdersPreview() {
+    final recentOrders = _orders.take(3).toList();
+    return Card(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+      elevation: 3,
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Latest orders',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 14),
+            if (recentOrders.isEmpty)
+              const Text('No recent orders available.',
+                  style: TextStyle(color: Colors.black54))
+            else
+              ...recentOrders.map((order) {
+                final status = order['status']?.toString() ?? 'unknown';
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('Order #${order['id'] ?? 'N/A'}',
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.bold)),
+                            const SizedBox(height: 4),
+                            Text(
+                                order['from_driver'] ??
+                                    order['from_driver_name'] ??
+                                    'Unknown driver',
+                                style: const TextStyle(color: Colors.black54)),
+                          ],
+                        ),
+                      ),
+                      Chip(
+                        backgroundColor: _statusColor(status).withOpacity(0.16),
+                        label: Text(status.replaceAll('_', ' ').toUpperCase(),
+                            style: TextStyle(color: _statusColor(status))),
+                      ),
+                    ],
+                  ),
+                );
+              }).toList(),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildRecentAlertsPreview() {
+    final recentAlerts = _emergencies.take(3).toList();
+    return Card(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+      elevation: 3,
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Latest alerts',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 14),
+            if (recentAlerts.isEmpty)
+              const Text('No recent alerts.',
+                  style: TextStyle(color: Colors.black54))
+            else
+              ...recentAlerts.map((alert) {
+                final status = alert['status']?.toString() ?? 'unknown';
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(alert['message']?.toString() ?? 'New alert',
+                          style: const TextStyle(fontWeight: FontWeight.bold)),
+                      const SizedBox(height: 4),
+                      Row(
+                        children: [
+                          Text('Taxi ${alert['taxi_id'] ?? 'N/A'}',
+                              style: const TextStyle(color: Colors.black54)),
+                          const SizedBox(width: 8),
+                          Chip(
+                            backgroundColor:
+                                _statusColor(status).withOpacity(0.16),
+                            label: Text(status.toUpperCase(),
+                                style: TextStyle(color: _statusColor(status))),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                );
+              }).toList(),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStatusPill(String title, String value, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.12),
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+              child:
+                  Text(title, style: const TextStyle(color: Colors.black54))),
+          Text(value,
+              style: TextStyle(fontWeight: FontWeight.bold, color: color)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDriverDetailChip(String label, String value) {
+    return Chip(
+      backgroundColor: Colors.grey[100],
+      label: Text('$label: $value', style: const TextStyle(fontSize: 12)),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
     );
   }
 
@@ -851,30 +1521,43 @@ class _AdminDashboardState extends State<AdminDashboard> {
     final message = emergency['message'] ?? 'No additional details';
     final createdAt = emergency['created_at'] ?? 'N/A';
 
-    return Card(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-      elevation: 2,
-      margin: const EdgeInsets.only(bottom: 12),
+    return HoverCard(
+      child: Card(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      elevation: 3,
+      margin: const EdgeInsets.only(bottom: 14),
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(18),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Alert #${emergency['alert_id'] ?? emergency['id'] ?? 'N/A'}',
-                style:
-                    const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 8),
-            Text('Taxi ID: $taxiId'),
-            Text('Driver: $driverName'),
-            Text('Phone: $phone'),
-            Text('Status: ${status.toString().toUpperCase()}'),
-            const SizedBox(height: 8),
-            Text('Message: $message'),
-            const SizedBox(height: 8),
-            Text(
-                'Location: ${emergency['latitude'] ?? emergency['lat'] ?? 'N/A'}, ${emergency['longitude'] ?? emergency['lng'] ?? 'N/A'}'),
-            const SizedBox(height: 4),
-            Text('Created at: $createdAt'),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Expanded(
+                  child: Text(
+                      'Alert #${emergency['alert_id'] ?? emergency['id'] ?? 'N/A'}',
+                      style: const TextStyle(
+                          fontSize: 16, fontWeight: FontWeight.bold)),
+                ),
+                Chip(
+                  backgroundColor:
+                      _statusColor(status.toString()).withOpacity(0.16),
+                  label: Text(status.toString().toUpperCase(),
+                      style: TextStyle(
+                          color: _statusColor(status.toString()),
+                          fontWeight: FontWeight.w700)),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            _buildDetailRow('Taxi ID', taxiId),
+            _buildDetailRow('Driver', driverName),
+            _buildDetailRow('Phone', phone),
+            _buildDetailRow('Message', message),
+            _buildDetailRow('Location',
+                '${emergency['latitude'] ?? emergency['lat'] ?? 'N/A'}, ${emergency['longitude'] ?? emergency['lng'] ?? 'N/A'}'),
+            _buildDetailRow('Created at', createdAt),
           ],
         ),
       ),
@@ -929,10 +1612,10 @@ class _AdminDashboardState extends State<AdminDashboard> {
 
   Widget _buildTrendBars() {
     final values = [
-      _asInt(_stats['online_taxis']),
-      _asInt(_stats['active_orders']),
-      _asInt(_stats['today_emergencies']),
-      _asInt(_stats['total_drivers']),
+      (_stats['online_taxis'] ?? 0) as int,
+      (_stats['active_orders'] ?? 0) as int,
+      (_stats['today_emergencies'] ?? 0) as int,
+      (_stats['total_drivers'] ?? 0) as int,
     ];
     final labels = ['Online', 'Active', 'Emergencies', 'Drivers'];
     final maxValue =

@@ -31,6 +31,7 @@ class _LoginPageState extends State<LoginPage> {
   String? _emailError;
   bool _rememberMe = false;
   bool _isAdminLogin = false;
+  bool _passwordVisible = false;
 
   @override
   void initState() {
@@ -317,7 +318,7 @@ class _LoginPageState extends State<LoginPage> {
               const SizedBox(height: 20),
               TextField(
                 controller: _passwordController,
-                obscureText: true,
+                obscureText: !_passwordVisible,
                 decoration: InputDecoration(
                   labelText: "Password",
                   border: OutlineInputBorder(
@@ -325,6 +326,18 @@ class _LoginPageState extends State<LoginPage> {
                   ),
                   filled: true,
                   fillColor: Colors.white,
+                  suffixIcon: IconButton(
+                    icon: Icon(
+                      _passwordVisible
+                          ? Icons.visibility
+                          : Icons.visibility_off,
+                    ),
+                    onPressed: () {
+                      setState(() {
+                        _passwordVisible = !_passwordVisible;
+                      });
+                    },
+                  ),
                 ),
               ),
               const SizedBox(height: 10),
