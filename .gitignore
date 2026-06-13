@@ -55,3 +55,4 @@ yarn-error.log*
 .env.local
 .env.production
 .hash.js
+.env.example
