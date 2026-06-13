@@ -3,10 +3,16 @@ plugins {
     id("org.jetbrains.kotlin.android")
     id("dev.flutter.flutter-gradle-plugin")
     id("com.google.gms.google-services")
+
+}
+
+dependencies{
+implementation(platform("com.google.firebase:firebase-bom:34.14.1"))
+implementation("com.google.firebase:firebase-analytics")
 }
 
 android {
-    namespace = "com.example.taxi_app"
+    namespace = "com.tracker.taxi_app"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -21,7 +27,7 @@ android {
 
     defaultConfig {
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        applicationId = "com.example.taxi_app"
+        applicationId = "com.tracker.taxi_app"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion
@@ -42,3 +48,4 @@ android {
 flutter {
     source = "../.."
 }
+

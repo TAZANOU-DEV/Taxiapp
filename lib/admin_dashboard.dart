@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'dart:math' as math;
+import 'package:url_launcher/url_launcher.dart';
 import 'login_page.dart';
 
 enum _AdminTab { overview, drivers, management }
@@ -59,6 +61,68 @@ class _AdminDashboardState extends State<AdminDashboard> {
       _totalOrders > 0 ? _completedOrders / _totalOrders : 0.0;
   double get _availabilityRate =>
       _totalDrivers > 0 ? _onlineDrivers / _totalDrivers : 0.0;
+
+  Map<String, int> get _dailyRequestsLast7 {
+    final now = DateTime.now();
+    final Map<String, int> counts = {};
+    for (int i = 6; i >= 0; i--) {
+      final day = now.subtract(Duration(days: i));
+      final key =
+          '${day.year.toString().padLeft(4, '0')}-${day.month.toString().padLeft(2, '0')}-${day.day.toString().padLeft(2, '0')}';
+      counts[key] = 0;
+    }
+    for (final order in _orders) {
+      final created = order['created_at']?.toString();
+      if (created == null) continue;
+      DateTime? dt;
+      try {
+        dt = DateTime.parse(created);
+      } catch (_) {
+        try {
+          dt = DateTime.parse(created.split('.').first);
+        } catch (_) {
+          dt = null;
+        }
+      }
+      if (dt == null) continue;
+      final key =
+          '${dt.year.toString().padLeft(4, '0')}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}';
+      if (counts.containsKey(key)) counts[key] = counts[key]! + 1;
+    }
+    return counts;
+  }
+
+  Map<String, int> get _quarterCounts {
+    final Map<String, int> counts = {};
+    for (final order in _orders) {
+      final taxiId = order['to_taxi_id'] ?? order['from_taxi_id'];
+      String region = 'Unknown';
+      if (taxiId != null) {
+        final taxi = _drivers.firstWhere(
+            (d) => d['taxi_id']?.toString() == taxiId.toString(),
+            orElse: () => {});
+        final plate = taxi['license_plate']?.toString() ?? '';
+        if (plate.isNotEmpty) {
+          final parts = plate.split(' ');
+          if (parts.isNotEmpty) region = parts[0];
+        }
+      }
+      counts[region] = (counts[region] ?? 0) + 1;
+    }
+    return counts;
+  }
+
+  int get _taxisInDanger {
+    final Set<String> ids = {};
+    for (final e in _emergencies) {
+      final status = e['status']?.toString() ?? '';
+      if (status.toLowerCase() != 'resolved') {
+        final id = e['taxi_id']?.toString();
+        if (id != null) ids.add(id);
+      }
+    }
+    return ids.length;
+  }
 
   int _orderCountByStatus(String status) {
     return _orders
@@ -261,6 +325,32 @@ class _AdminDashboardState extends State<AdminDashboard> {
     await _fetchStats();
   }
 
+  Future<void> _launchPhone(String? phoneRaw) async {
+    if (phoneRaw == null) return;
+    final phone = phoneRaw.replaceAll(RegExp(r'[^+\d]'), '');
+    if (phone.isEmpty) return;
+    final uri = Uri(scheme: 'tel', path: phone);
+    try {
+      await launchUrl(uri);
+    } catch (e) {
+      _showSnackBar('Could not launch phone app: $e');
+    }
+  }
+
+  Future<void> _launchWhatsApp(String? phoneRaw, {String? message}) async {
+    if (phoneRaw == null) return;
+    var digits = phoneRaw.replaceAll(RegExp(r'[^\d]'), '');
+    if (digits.isEmpty) return;
+    // wa.me expects country code + number without plus
+    final uri = Uri.parse(
+        'https://wa.me/$digits${message != null ? '?text=${Uri.encodeComponent(message)}' : ''}');
+    try {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } catch (e) {
+      _showSnackBar('Could not open WhatsApp: $e');
+    }
+  }
+
   Future<void> _updateOrderStatus(int orderId, String status) async {
     final headers = await _authHeaders();
     if (headers.isEmpty) return;
@@ -322,6 +412,8 @@ class _AdminDashboardState extends State<AdminDashboard> {
               _updateTaxiStatus(driver['taxi_id'], toOnline);
             }
           },
+          onCall: (phone) => _launchPhone(phone),
+          onWhatsApp: (phone) => _launchWhatsApp(phone),
         );
       },
     );
@@ -436,6 +528,15 @@ class _AdminDashboardState extends State<AdminDashboard> {
                 Expanded(child: _buildOrderStatusBreakdownCard()),
                 const SizedBox(width: 16),
                 Expanded(child: _buildDriverAvailabilityCard()),
+              ],
+            ),
+            const SizedBox(height: 24),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(child: _buildDailyRequestsCard()),
+                const SizedBox(width: 16),
+                Expanded(child: _buildQuarterBreakdownCard()),
               ],
             ),
             const SizedBox(height: 24),
@@ -1154,7 +1255,9 @@ class _AdminDashboardState extends State<AdminDashboard> {
               children: [
                 Expanded(child: _buildPieChartSection(statuses, counts)),
                 const SizedBox(width: 18),
-                Expanded(child: _buildAlertOverviewSection(pending, resolved, totalAlerts)),
+                Expanded(
+                    child: _buildAlertOverviewSection(
+                        pending, resolved, totalAlerts)),
               ],
             ),
           ],
@@ -1175,7 +1278,8 @@ class _AdminDashboardState extends State<AdminDashboard> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text('Order status split', style: TextStyle(fontWeight: FontWeight.bold)),
+        const Text('Order status split',
+            style: TextStyle(fontWeight: FontWeight.bold)),
         const SizedBox(height: 14),
         Center(
           child: SizedBox(
@@ -1189,7 +1293,8 @@ class _AdminDashboardState extends State<AdminDashboard> {
               child: Center(
                 child: Text(
                   '$total',
-                  style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+                  style: const TextStyle(
+                      fontSize: 24, fontWeight: FontWeight.bold),
                 ),
               ),
             ),
@@ -1213,18 +1318,21 @@ class _AdminDashboardState extends State<AdminDashboard> {
     );
   }
 
-  Widget _buildAlertOverviewSection(int pending, int resolved, int totalAlerts) {
+  Widget _buildAlertOverviewSection(
+      int pending, int resolved, int totalAlerts) {
     final maxAlert = totalAlerts > 0 ? totalAlerts : 1;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text('Alert response metrics', style: TextStyle(fontWeight: FontWeight.bold)),
+        const Text('Alert response metrics',
+            style: TextStyle(fontWeight: FontWeight.bold)),
         const SizedBox(height: 14),
         _buildStatusPill('Pending', '$pending', Colors.orange),
         const SizedBox(height: 10),
         _buildStatusPill('Resolved', '$resolved', Colors.green),
         const SizedBox(height: 16),
-        const Text('Alert trend', style: TextStyle(fontWeight: FontWeight.bold)),
+        const Text('Alert trend',
+            style: TextStyle(fontWeight: FontWeight.bold)),
         const SizedBox(height: 12),
         Container(
           height: 120,
@@ -1239,18 +1347,111 @@ class _AdminDashboardState extends State<AdminDashboard> {
               children: [
                 _buildBarIndicator('Pending', pending, maxAlert, Colors.orange),
                 const SizedBox(width: 12),
-                _buildBarIndicator('Resolved', resolved, maxAlert, Colors.green),
+                _buildBarIndicator(
+                    'Resolved', resolved, maxAlert, Colors.green),
               ],
             ),
           ),
         ),
         const SizedBox(height: 12),
-        Text('Total alerts: $totalAlerts', style: const TextStyle(color: Colors.black54)),
+        Text('Total alerts: $totalAlerts',
+            style: const TextStyle(color: Colors.black54)),
       ],
     );
   }
 
-  Widget _buildBarIndicator(String label, int value, int maxValue, Color color) {
+  Widget _buildDailyRequestsCard() {
+    final data = _dailyRequestsLast7.entries.toList();
+    final total = data.fold<int>(0, (s, e) => s + e.value);
+    final maxVal = data.fold<int>(1, (p, e) => e.value > p ? e.value : p);
+    return Card(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+      elevation: 3,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Requests (last 7 days)',
+                style: TextStyle(fontWeight: FontWeight.bold)),
+            const SizedBox(height: 12),
+            SizedBox(
+              height: 110,
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: data.map((entry) {
+                  final val = entry.value;
+                  final height = maxVal > 0 ? (val / maxVal) * 90.0 : 8.0;
+                  final label = entry.key.split('-').sublist(1).join('/');
+                  return Expanded(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        Container(
+                          height: height < 8.0 ? 8.0 : height,
+                          width: 14,
+                          decoration: BoxDecoration(
+                            color: Colors.blue[700],
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text('$val', style: const TextStyle(fontSize: 12)),
+                        const SizedBox(height: 4),
+                        Text(label, style: const TextStyle(fontSize: 10)),
+                      ],
+                    ),
+                  );
+                }).toList(),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text('Total: $total',
+                style: const TextStyle(color: Colors.black54)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildQuarterBreakdownCard() {
+    final counts = _quarterCounts;
+    final entries = counts.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+    return Card(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+      elevation: 3,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Top quarters',
+                style: TextStyle(fontWeight: FontWeight.bold)),
+            const SizedBox(height: 12),
+            if (entries.isEmpty)
+              const Text('No location data available',
+                  style: TextStyle(color: Colors.black54))
+            else
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: entries
+                    .take(6)
+                    .map((e) => Chip(label: Text('${e.key} • ${e.value}')))
+                    .toList(),
+              ),
+            const SizedBox(height: 10),
+            Text('Taxis in danger: $_taxisInDanger',
+                style: const TextStyle(color: Colors.red)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBarIndicator(
+      String label, int value, int maxValue, Color color) {
     final heightFactor = maxValue > 0 ? value / maxValue : 0.0;
     return Expanded(
       child: Column(
@@ -1274,9 +1475,12 @@ class _AdminDashboardState extends State<AdminDashboard> {
             ),
           ),
           const SizedBox(height: 8),
-          Text(label, textAlign: TextAlign.center, style: const TextStyle(fontSize: 12, color: Colors.black54)),
+          Text(label,
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 12, color: Colors.black54)),
           const SizedBox(height: 4),
-          Text('${((heightFactor) * 100).round()}%', style: const TextStyle(fontWeight: FontWeight.bold)),
+          Text('${((heightFactor) * 100).round()}%',
+              style: const TextStyle(fontWeight: FontWeight.bold)),
         ],
       ),
     );
@@ -1293,9 +1497,13 @@ class _AdminDashboardState extends State<AdminDashboard> {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Container(width: 10, height: 10, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
+          Container(
+              width: 10,
+              height: 10,
+              decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
           const SizedBox(width: 8),
-          Text('$label • $count ($percentage%)', style: const TextStyle(fontSize: 12)),
+          Text('$label • $count ($percentage%)',
+              style: const TextStyle(fontSize: 12)),
         ],
       ),
     );
@@ -1314,13 +1522,13 @@ class _AdminDashboardState extends State<AdminDashboard> {
       crossAxisAlignment: CrossAxisAlignment.end,
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: counts.map((count) {
-        final barHeight = maxCount > 0 ? (count / maxCount) * 90 : 8;
+        final double barHeight = maxCount > 0 ? (count / maxCount) * 90.0 : 8.0;
         return Expanded(
           child: Column(
             mainAxisAlignment: MainAxisAlignment.end,
             children: [
               Container(
-                height: barHeight < 12 ? 12 : barHeight,
+                height: barHeight < 12.0 ? 12.0 : barHeight,
                 width: 12,
                 decoration: BoxDecoration(
                   color: Colors.redAccent,
@@ -1479,6 +1687,32 @@ class _AdminDashboardState extends State<AdminDashboard> {
   }
 
   Widget _buildDriverDetailChip(String label, String value) {
+    if (label.toLowerCase() == 'phone' && value != 'N/A') {
+      return GestureDetector(
+        onTap: () => _launchPhone(value),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          decoration: BoxDecoration(
+            color: Colors.grey[100],
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text('$label: $value', style: const TextStyle(fontSize: 12)),
+              const SizedBox(width: 8),
+              IconButton(
+                onPressed: () => _launchWhatsApp(value),
+                icon: const Icon(Icons.chat, size: 18, color: Colors.green),
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
     return Chip(
       backgroundColor: Colors.grey[100],
       label: Text('$label: $value', style: const TextStyle(fontSize: 12)),
@@ -1522,43 +1756,79 @@ class _AdminDashboardState extends State<AdminDashboard> {
     final createdAt = emergency['created_at'] ?? 'N/A';
 
     return HoverCard(
-      child: Card(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      elevation: 3,
-      margin: const EdgeInsets.only(bottom: 14),
-      child: Padding(
-        padding: const EdgeInsets.all(18),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Expanded(
-                  child: Text(
-                      'Alert #${emergency['alert_id'] ?? emergency['id'] ?? 'N/A'}',
-                      style: const TextStyle(
-                          fontSize: 16, fontWeight: FontWeight.bold)),
-                ),
-                Chip(
-                  backgroundColor:
-                      _statusColor(status.toString()).withOpacity(0.16),
-                  label: Text(status.toString().toUpperCase(),
-                      style: TextStyle(
-                          color: _statusColor(status.toString()),
-                          fontWeight: FontWeight.w700)),
-                ),
-              ],
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 14),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.08),
+              blurRadius: 18,
+              offset: const Offset(0, 6),
             ),
-            const SizedBox(height: 10),
-            _buildDetailRow('Taxi ID', taxiId),
-            _buildDetailRow('Driver', driverName),
-            _buildDetailRow('Phone', phone),
-            _buildDetailRow('Message', message),
-            _buildDetailRow('Location',
-                '${emergency['latitude'] ?? emergency['lat'] ?? 'N/A'}, ${emergency['longitude'] ?? emergency['lng'] ?? 'N/A'}'),
-            _buildDetailRow('Created at', createdAt),
           ],
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(18),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Expanded(
+                    child: Text(
+                        'Alert #${emergency['alert_id'] ?? emergency['id'] ?? 'N/A'}',
+                        style: const TextStyle(
+                            fontSize: 16, fontWeight: FontWeight.bold)),
+                  ),
+                  Chip(
+                    backgroundColor:
+                        _statusColor(status.toString()).withOpacity(0.16),
+                    label: Text(status.toString().toUpperCase(),
+                        style: TextStyle(
+                            color: _statusColor(status.toString()),
+                            fontWeight: FontWeight.w700)),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              _buildDetailRow('Taxi ID', taxiId),
+              _buildDetailRow('Driver', driverName),
+              // Contact actions for phone
+              if (phone != 'N/A')
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text('Phone:',
+                            style:
+                                const TextStyle(fontWeight: FontWeight.bold)),
+                      ),
+                      Text(phone, textAlign: TextAlign.right),
+                      const SizedBox(width: 8),
+                      IconButton(
+                        onPressed: () => _launchPhone(phone),
+                        icon: const Icon(Icons.phone),
+                      ),
+                      IconButton(
+                        onPressed: () =>
+                            _launchWhatsApp(phone, message: message),
+                        icon: const Icon(Icons.chat, color: Colors.green),
+                      ),
+                    ],
+                  ),
+                )
+              else
+                _buildDetailRow('Phone', phone),
+              _buildDetailRow('Message', message),
+              _buildDetailRow('Location',
+                  '${emergency['latitude'] ?? emergency['lat'] ?? 'N/A'}, ${emergency['longitude'] ?? emergency['lng'] ?? 'N/A'}'),
+              _buildDetailRow('Created at', createdAt),
+            ],
+          ),
         ),
       ),
     );
@@ -1651,13 +1921,114 @@ class _AdminDashboardState extends State<AdminDashboard> {
   }
 }
 
+class HoverCard extends StatefulWidget {
+  final Widget child;
+  const HoverCard({required this.child, super.key});
+
+  @override
+  State<HoverCard> createState() => _HoverCardState();
+}
+
+class _HoverCardState extends State<HoverCard> {
+  bool _hovering = false;
+  bool _pressing = false;
+
+  void _setHover(bool hovering) {
+    setState(() {
+      _hovering = hovering;
+    });
+  }
+
+  void _setPress(bool pressing) {
+    setState(() {
+      _pressing = pressing;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final hoverScale = _hovering || _pressing ? 1.01 : 1.0;
+    final boxShadow = _hovering || _pressing
+        ? [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.16),
+              blurRadius: 24,
+              offset: const Offset(0, 12),
+            )
+          ]
+        : [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.08),
+              blurRadius: 18,
+              offset: const Offset(0, 8),
+            )
+          ];
+
+    return MouseRegion(
+      onEnter: (_) => _setHover(true),
+      onExit: (_) => _setHover(false),
+      child: GestureDetector(
+        onTapDown: (_) => _setPress(true),
+        onTapUp: (_) => _setPress(false),
+        onTapCancel: () => _setPress(false),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          curve: Curves.easeOut,
+          transform: Matrix4.identity()..scale(hoverScale),
+          decoration: BoxDecoration(boxShadow: boxShadow),
+          child: widget.child,
+        ),
+      ),
+    );
+  }
+}
+
+class _PieChartPainter extends CustomPainter {
+  final List<double> values;
+  final List<Color> colors;
+
+  _PieChartPainter({required this.values, required this.colors});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final rect = Offset.zero & size;
+    final total = values.fold<double>(0, (sum, value) => sum + value);
+    final center = rect.center;
+    final radius = math.min(size.width, size.height) / 2;
+    var startAngle = -math.pi / 2;
+
+    for (var i = 0; i < values.length; i++) {
+      final sweepAngle = total > 0 ? (values[i] / total) * 2 * math.pi : 0.0;
+      final paint = Paint()..color = colors[i];
+      canvas.drawArc(
+        Rect.fromCircle(center: center, radius: radius),
+        startAngle,
+        sweepAngle,
+        true,
+        paint,
+      );
+      startAngle += sweepAngle;
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _PieChartPainter oldDelegate) {
+    return !listEquals(values, oldDelegate.values) ||
+        !listEquals(colors, oldDelegate.colors);
+  }
+}
+
 class DrvierDetailSheet extends StatelessWidget {
   final Map<String, dynamic> driver;
   final void Function(bool toOnline) onStatusToggle;
+  final void Function(String? phone)? onCall;
+  final void Function(String? phone)? onWhatsApp;
 
   const DrvierDetailSheet({
     required this.driver,
     required this.onStatusToggle,
+    this.onCall,
+    this.onWhatsApp,
     super.key,
   });
 
@@ -1733,7 +2104,27 @@ class DrvierDetailSheet extends StatelessWidget {
             ),
           ),
           Expanded(
-            child: Text(value, textAlign: TextAlign.right),
+            child: label.toLowerCase() == 'phone' && value != 'N/A'
+                ? Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      Text(value, textAlign: TextAlign.right),
+                      const SizedBox(width: 8),
+                      IconButton(
+                        onPressed: () {
+                          if (onCall != null) onCall!(value);
+                        },
+                        icon: const Icon(Icons.phone),
+                      ),
+                      IconButton(
+                        onPressed: () {
+                          if (onWhatsApp != null) onWhatsApp!(value);
+                        },
+                        icon: const Icon(Icons.chat, color: Colors.green),
+                      ),
+                    ],
+                  )
+                : Text(value, textAlign: TextAlign.right),
           ),
         ],
       ),

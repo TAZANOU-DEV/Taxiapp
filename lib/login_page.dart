@@ -4,7 +4,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/http.dart' as http;
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:flutter_facebook_auth/flutter_facebook_auth.dart';
-import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 import 'dart:convert';
 import 'forgot_password_page.dart';
 import 'register_page.dart';
@@ -137,31 +136,7 @@ class _LoginPageState extends State<LoginPage> {
     }
   }
 
-  Future<void> _loginWithApple() async {
-    try {
-      final isAvailable = await SignInWithApple.isAvailable();
-      if (!isAvailable) {
-        _showSnackBar('Apple Sign In is not available on this device.');
-        return;
-      }
 
-      final credential = await SignInWithApple.getAppleIDCredential(
-        scopes: [
-          AppleIDAuthorizationScopes.email,
-          AppleIDAuthorizationScopes.fullName
-        ],
-      );
-
-      if (credential.identityToken == null) {
-        _showSnackBar('Unable to retrieve Apple identity token.');
-        return;
-      }
-
-      await _handleSocialLogin('apple', {'idToken': credential.identityToken});
-    } catch (e) {
-      _showSnackBar('Apple sign-in failed: $e');
-    }
-  }
 
   void _validateAndLogin() async {
     final email = _emailController.text.trim();
@@ -422,19 +397,6 @@ class _LoginPageState extends State<LoginPage> {
                         child: const Text('Facebook'),
                       ),
                     ),
-                    if (!kIsWeb &&
-                        (defaultTargetPlatform == TargetPlatform.iOS ||
-                            defaultTargetPlatform == TargetPlatform.macOS))
-                      Padding(
-                        padding: const EdgeInsets.only(top: 10),
-                        child: SizedBox(
-                          height: 50,
-                          child: SignInWithAppleButton(
-                            onPressed: _loginWithApple,
-                            style: SignInWithAppleButtonStyle.black,
-                          ),
-                        ),
-                      ),
                   ],
                 ),
               ),
