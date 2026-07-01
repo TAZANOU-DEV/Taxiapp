@@ -81,7 +81,7 @@ class _MapPageState extends State<MapPage> {
           width: 80,
           height: 80,
           point: LatLng(currentPosition!.latitude, currentPosition!.longitude),
-          builder: (ctx) => const Icon(
+          child: const Icon(
             Icons.person_pin_circle,
             color: Colors.blue,
             size: 40,
@@ -98,7 +98,7 @@ class _MapPageState extends State<MapPage> {
           width: 60,
           height: 60,
           point: LatLng(lat, lng),
-          builder: (ctx) => const Icon(
+          child: const Icon(
             Icons.local_taxi,
             color: Colors.red,
             size: 35,
@@ -169,8 +169,9 @@ class _MapPageState extends State<MapPage> {
                 FlutterMap(
                   mapController: _mapController,
                   options: MapOptions(
-                    center: center,
-                    zoom: currentZoom,
+                    // update to newer flutter_map API
+                    initialCenter: center,
+                    initialZoom: currentZoom,
                     maxZoom: 18,
                     minZoom: 3,
                   ),

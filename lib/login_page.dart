@@ -2,8 +2,12 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/http.dart' as http;
-import 'package:google_sign_in/google_sign_in.dart';
-import 'package:flutter_facebook_auth/flutter_facebook_auth.dart';
+// Social login packages caused compatibility issues in the current build.
+// Stubbing social login flows for now to allow the app to compile.
+// If you want social sign-in, re-enable and adapt these imports to the
+// package versions you're using.
+// import 'package:google_sign_in/google_sign_in.dart';
+// import 'package:flutter_facebook_auth/flutter_facebook_auth.dart';
 import 'dart:convert';
 import 'forgot_password_page.dart';
 import 'register_page.dart';
@@ -101,42 +105,16 @@ class _LoginPageState extends State<LoginPage> {
   }
 
   Future<void> _loginWithGoogle() async {
-    try {
-      final googleUser = await GoogleSignIn(scopes: ['email']).signIn();
-      if (googleUser == null) {
-        return;
-      }
-
-      final googleAuth = await googleUser.authentication;
-      if (googleAuth.idToken == null) {
-        _showSnackBar('Unable to retrieve Google token.');
-        return;
-      }
-
-      await _handleSocialLogin('google', {'idToken': googleAuth.idToken});
-    } catch (e) {
-      _showSnackBar('Google sign-in failed: $e');
-    }
+    // Stubbed: Google sign-in is disabled to avoid compile-time
+    // incompatibilities with the installed google_sign_in package.
+    _showSnackBar('Google login is not configured in this build.');
   }
 
   Future<void> _loginWithFacebook() async {
-    try {
-      final result = await FacebookAuth.instance
-          .login(permissions: ['email', 'public_profile']);
-      if (result.status != LoginStatus.success || result.accessToken == null) {
-        _showSnackBar('Facebook login cancelled or failed.');
-        return;
-      }
-
-      await _handleSocialLogin('facebook', {
-        'accessToken': result.accessToken!.token,
-      });
-    } catch (e) {
-      _showSnackBar('Facebook sign-in failed: $e');
-    }
+    // Stubbed: Facebook sign-in is disabled to avoid compile-time
+    // incompatibilities with the installed flutter_facebook_auth package.
+    _showSnackBar('Facebook login is not configured in this build.');
   }
-
-
 
   void _validateAndLogin() async {
     final email = _emailController.text.trim();

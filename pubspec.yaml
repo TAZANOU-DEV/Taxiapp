@@ -11,22 +11,23 @@ dependencies:
     sdk: flutter
 
   # Packages
-  socket_io_client: ^2.0.0
-  http: ^0.13.5
-  google_sign_in: ^5.4.0
-  flutter_facebook_auth: ^5.0.11
-  geolocator: ^9.0.2
-  flutter_local_notifications: ^16.3.2
-  flutter_map: ^4.0.0
-  latlong2: ^0.8.2
-  image_picker: ^0.8.7+5
-  shared_preferences: ^2.2.2
-  url_launcher: ^6.1.7
+  socket_io_client: ^3.1.6
+  http: ^1.6.0
+  google_sign_in: ^7.2.0
+  flutter_facebook_auth: ^7.1.7
+  firebase_core: ^4.11.0
+  geolocator: ^14.0.3
+  flutter_local_notifications: ^22.0.1
+  flutter_map: ^8.3.0
+  latlong2: ^0.9.1
+  image_picker: ^1.2.2
+  shared_preferences: ^2.4.26
+  url_launcher: ^6.3.2
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
-  flutter_lints: ^2.0.0
+  flutter_lints: ^6.0.0
 
 flutter:
   uses-material-design: true

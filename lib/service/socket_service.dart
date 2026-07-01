@@ -4,12 +4,12 @@ import '../notification.dart';
 
 class SocketService {
   late IO.Socket socket;
-  Function(Map<String, dynamic>)? onTaxiLocationUpdate;
-  Function(Map<String, dynamic>)? onIncomingOrder;
-  Function(Map<String, dynamic>)? onOrderStatusUpdate;
-  Function(Map<String, dynamic>)? onEmergencyAlert;
-  Function(Map<String, dynamic>)? onHelpOnWayUpdate;
-  Function(String)? onTaxiOffline;
+  void Function(dynamic)? onTaxiLocationUpdate;
+  void Function(dynamic)? onIncomingOrder;
+  void Function(dynamic)? onOrderStatusUpdate;
+  void Function(dynamic)? onEmergencyAlert;
+  void Function(dynamic)? onHelpOnWayUpdate;
+  void Function(String)? onTaxiOffline;
 
   void connect() {
     const serverUrl = kIsWeb ? 'http://localhost:3000' : 'http://10.0.2.2:3000';

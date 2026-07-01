@@ -243,7 +243,8 @@ class _HomePageState extends State<HomePage> {
       point: current,
       width: 80,
       height: 80,
-      builder: (ctx) => const Icon(
+      // Newer versions of `Marker` use `child` instead of `builder`.
+      child: const Icon(
         Icons.person_pin_circle,
         color: Colors.blue,
         size: 40,
@@ -267,7 +268,7 @@ class _HomePageState extends State<HomePage> {
         point: LatLng(lat, lng),
         width: 60,
         height: 60,
-        builder: (ctx) => Icon(
+        child: Icon(
           Icons.local_taxi,
           color: color,
           size: 34,
@@ -596,9 +597,11 @@ class _HomePageState extends State<HomePage> {
                     : FlutterMap(
                         mapController: _mapController,
                         options: MapOptions(
-                          center: LatLng(currentPosition!.latitude,
+                          // `flutter_map` newer versions use `initialCenter` and
+                          // `initialZoom` instead of `center`/`zoom`.
+                          initialCenter: LatLng(currentPosition!.latitude,
                               currentPosition!.longitude),
-                          zoom: _defaultZoom,
+                          initialZoom: _defaultZoom,
                           maxZoom: 18,
                           minZoom: 3,
                         ),
