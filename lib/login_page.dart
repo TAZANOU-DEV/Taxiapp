@@ -224,9 +224,11 @@ class _LoginPageState extends State<LoginPage> {
 
               const SizedBox(height: 10),
 
-              // Admin login toggle
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
+              // Admin login toggle - use Wrap to avoid RenderFlex overflow on small screens
+              Wrap(
+                alignment: WrapAlignment.center,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                spacing: 8,
                 children: [
                   const Text("Driver Login"),
                   Switch(

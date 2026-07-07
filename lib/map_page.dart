@@ -185,7 +185,7 @@ class _MapPageState extends State<MapPage> {
                     CircleLayer(
                       circles: currentPosition != null
                           ? [
-                              CircleMarker(
+                              CircleMarker<Object>(
                                 point: center,
                                 color: Colors.yellow.withOpacity(0.2),
                                 borderColor: Colors.yellow,
@@ -193,7 +193,7 @@ class _MapPageState extends State<MapPage> {
                                 radius: 500,
                               ),
                             ]
-                          : [],
+                          : <CircleMarker<Object>>[],
                     ),
                     MarkerLayer(markers: _markers),
                   ],

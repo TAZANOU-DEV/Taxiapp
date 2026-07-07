@@ -320,11 +320,10 @@ class _RegisterPageState extends State<RegisterPage> {
                   const Text("Already have an account? "),
                   TextButton(
                     onPressed: () {
-                      Navigator.pushReplacement(
+                      Navigator.pushNamedAndRemoveUntil(
                         context,
-                        MaterialPageRoute(
-                          builder: (context) => const LoginPage(),
-                        ),
+                        '/login',
+                        (route) => false,
                       );
                     },
                     child: const Text(

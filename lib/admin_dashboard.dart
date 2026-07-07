@@ -382,10 +382,8 @@ class _AdminDashboardState extends State<AdminDashboard> {
     final prefs = await SharedPreferences.getInstance();
     await prefs.clear();
     if (!mounted) return;
-    Navigator.pushReplacement(
-      context,
-      MaterialPageRoute(builder: (context) => const LoginPage()),
-    );
+    // Ensure any open modal routes are removed and navigate to login
+    Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
   }
 
   void _showSnackBar(String message, {Color color = Colors.red}) {
