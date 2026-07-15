@@ -181,9 +181,13 @@ class SocketService {
     });
   }
 
-  void sendEmergency(String taxiId) {
-    socket.emit('emergency', {'taxiId': taxiId, 'message': 'Help!'});
-    // Record the activity
+  void sendEmergency(String taxiId, double lat, double lng, String message) {
+    socket.emit('emergency', {
+      'taxiId': taxiId,
+      'lat': lat,
+      'lng': lng,
+      'message': message,
+    });
     NotificationService.showNotification(
       title: 'Emergency Alert Sent',
       body: 'Your emergency alert has been sent to nearby drivers',

@@ -343,10 +343,23 @@ router.post('/register', async (req, res) => {
       }
     }
 
+    const userResponse = {
+      id: userId,
+      username: normalizedUsername,
+      email: normalizedEmail,
+      role,
+    };
+
+    if (role === 'driver') {
+      const taxiId = `TX-${userId.toString().padStart(4, '0')}`;
+      userResponse.taxiId = taxiId;
+    }
+
     res.status(201).json({
       success: true,
       message: 'User registered successfully',
-      userId
+      user: userResponse,
+      userId,
     });
   } catch (error) {
     console.error('Registration error:', error);
@@ -382,13 +395,23 @@ router.post('/login', async (req, res) => {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
+    // Find the driver's taxi id, if available
+    const [taxis] = await db.query(
+      'SELECT taxi_id FROM taxis WHERE driver_name = ? LIMIT 1',
+      [user.username]
+    );
+
+    const taxiInfo = taxis.length > 0 ? taxis[0] : null;
+    const taxiId = taxiInfo?.taxi_id || null;
+
     // Generate JWT token
     const token = jwt.sign(
       {
         id: user.id,
         username: user.username,
         email: user.email,
-        role: user.role
+        role: user.role,
+        taxiId,
       },
       process.env.JWT_SECRET,
       { expiresIn: '24h' }
@@ -401,7 +424,8 @@ router.post('/login', async (req, res) => {
         id: user.id,
         username: user.username,
         email: user.email,
-        role: user.role
+        role: user.role,
+        taxiId,
       }
     });
   } catch (error) {

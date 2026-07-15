@@ -163,6 +163,22 @@ class _LoginPageState extends State<LoginPage> {
           await prefs.setString('token', data['token']);
           await prefs.setString('user', jsonEncode(data['user']));
 
+          final user = data['user'] as Map<String, dynamic>?;
+          final username =
+              user?['username']?.toString() ?? email.split('@').first;
+          final taxiId = user?['taxiId']?.toString() ?? 'Unknown';
+          final userId = user != null && user['id'] != null
+              ? int.tryParse(user['id'].toString())
+              : null;
+
+          await prefs.setString('user_name', username);
+          await prefs.setString(
+              'user_email', data['user']['email']?.toString() ?? email);
+          await prefs.setString('taxi_id', taxiId);
+          if (userId != null) {
+            await prefs.setInt('user_id', userId);
+          }
+
           // Save credentials if remember me is checked
           if (_rememberMe) {
             await prefs.setString('email', email);
@@ -186,7 +202,12 @@ class _LoginPageState extends State<LoginPage> {
           } else {
             Navigator.pushReplacement(
               context,
-              MaterialPageRoute(builder: (context) => const HomePage()),
+              MaterialPageRoute(
+                builder: (context) => HomePage(
+                  userName: username,
+                  taxiId: taxiId,
+                ),
+              ),
             );
           }
         } else {

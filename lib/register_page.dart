@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'login_page.dart';
@@ -130,11 +131,32 @@ class _RegisterPageState extends State<RegisterPage> {
       if (response.statusCode == 201) {
         final data = jsonDecode(response.body);
         if (data['success']) {
+          final user = data['user'] as Map<String, dynamic>?;
+          final savedTaxiId = user != null && user['taxiId'] != null
+              ? user['taxiId'].toString()
+              : 'Unknown';
+          final savedUserId = user != null && user['id'] != null
+              ? int.tryParse(user['id'].toString())
+              : null;
+
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setString('user_name', name);
+          await prefs.setString('user_email', email);
+          await prefs.setString('taxi_id', savedTaxiId);
+          if (savedUserId != null) {
+            await prefs.setInt('user_id', savedUserId);
+          }
+
           _showSuccess('Registration successful! Welcome.');
           Future.delayed(const Duration(seconds: 2), () {
             Navigator.pushReplacement(
               context,
-              MaterialPageRoute(builder: (context) => const HomePage()),
+              MaterialPageRoute(
+                builder: (context) => HomePage(
+                  userName: name,
+                  taxiId: savedTaxiId,
+                ),
+              ),
             );
           });
         } else {

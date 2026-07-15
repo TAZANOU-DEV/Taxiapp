@@ -7,6 +7,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../service/socket_service.dart';
 import 'about_page.dart';
@@ -16,7 +17,10 @@ import 'chat_page.dart';
 import 'notification_page.dart';
 
 class HomePage extends StatefulWidget {
-  const HomePage({super.key});
+  const HomePage({super.key, this.userName, this.taxiId});
+
+  final String? userName;
+  final String? taxiId;
 
   @override
   State<HomePage> createState() => _HomePageState();
@@ -24,8 +28,10 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> {
   int _selectedIndex = 0;
-  String userName = "John Doe";
-  String taxId = "CM-TX-4589";
+  String userName = 'John Doe';
+  String taxId = 'Unknown';
+  String userEmail = '';
+  int? userId;
   bool isOnline = true;
   bool isInDanger = false;
   bool _isSOSHovered = false;
@@ -39,6 +45,8 @@ class _HomePageState extends State<HomePage> {
   String? activeEmergencyRequesterId;
   String? activeEmergencyRequesterName;
   final Set<String> helpersOnWay = {};
+  final Map<String, Set<String>> helpersByRequest =
+      {}; // track helpers per requesting taxi
 
   final MapController _mapController = MapController();
   List<Marker> _markers = [];
@@ -288,6 +296,17 @@ class _HomePageState extends State<HomePage> {
     });
   }
 
+  Future<void> _loadSavedUserProfile() async {
+    final prefs = await SharedPreferences.getInstance();
+
+    setState(() {
+      userName = widget.userName ?? prefs.getString('user_name') ?? 'John Doe';
+      taxId = widget.taxiId ?? prefs.getString('taxi_id') ?? 'Unknown';
+      userEmail = prefs.getString('user_email') ?? '';
+      userId = prefs.getInt('user_id');
+    });
+  }
+
   void _setupSocketListeners() {
     // Handle incoming taxi location updates
     socketService.onTaxiLocationUpdate = (data) {
@@ -355,12 +374,20 @@ class _HomePageState extends State<HomePage> {
     socketService.onEmergencyAlert = (data) {
       final incomingTaxiId = data['taxiId'] as String?;
       final incomingTaxiLabel = data['taxiNumber'] as String? ?? incomingTaxiId;
-      if (incomingTaxiId != null && incomingTaxiId != taxId) {
+      if (incomingTaxiId != null) {
         setState(() {
           activeEmergencyRequesterId = incomingTaxiId;
           activeEmergencyRequesterName = incomingTaxiLabel;
+
+          // populate current helper set for this request if known
+          final helpers = helpersByRequest[incomingTaxiId] ?? <String>{};
+          helpersOnWay.clear();
+          helpersOnWay.addAll(helpers);
+
           activities.insert(0, {
-            "title": "Emergency request from $incomingTaxiLabel",
+            "title": incomingTaxiId == taxId
+                ? "Your emergency alert is active"
+                : "Emergency request from $incomingTaxiLabel",
             "time": _currentActivityTime(),
           });
         });
@@ -372,10 +399,25 @@ class _HomePageState extends State<HomePage> {
       final helperTaxiId = data['helperTaxiId'] as String?;
       final helperTaxiLabel = helperTaxiId ?? 'Unknown taxi';
 
+      if (requestingTaxiId != null && helperTaxiId != null) {
+        // record helper for that request
+        helpersByRequest.putIfAbsent(requestingTaxiId, () => <String>{});
+        helpersByRequest[requestingTaxiId]!.add(helperTaxiId);
+      }
+
       setState(() {
-        if (requestingTaxiId == taxId && helperTaxiId != null) {
-          helpersOnWay.add(helperTaxiId);
+        // if current user is the request owner, update visible helper set
+        if (requestingTaxiId == taxId) {
+          if (helperTaxiId != null) helpersOnWay.add(helperTaxiId);
         }
+
+        // if current UI is showing a particular active requester, keep the helpers list in sync
+        if (activeEmergencyRequesterId != null &&
+            activeEmergencyRequesterId == requestingTaxiId) {
+          helpersOnWay.clear();
+          helpersOnWay.addAll(helpersByRequest[requestingTaxiId] ?? <String>{});
+        }
+
         activities.insert(0, {
           "title": "$helperTaxiLabel is coming to help",
           "time": _currentActivityTime(),
@@ -419,7 +461,12 @@ class _HomePageState extends State<HomePage> {
     });
 
     sendEmergency();
-    socketService.sendEmergency(taxId);
+    socketService.sendEmergency(
+      taxId,
+      currentPosition?.latitude ?? 0,
+      currentPosition?.longitude ?? 0,
+      'Help! My taxi ${taxId} needs assistance.',
+    );
 
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
@@ -477,12 +524,21 @@ class _HomePageState extends State<HomePage> {
       currentPosition?.longitude ?? 0,
     );
 
-    setState(() {
-      activities.insert(0, {
-        "title": "You are coming to help Taxi $activeEmergencyRequesterName",
-        "time": _currentActivityTime(),
+    // optimistic local update: add self to helper set for the request
+    if (activeEmergencyRequesterId != null) {
+      helpersByRequest.putIfAbsent(
+          activeEmergencyRequesterId!, () => <String>{});
+      helpersByRequest[activeEmergencyRequesterId!]!.add(taxId);
+      setState(() {
+        helpersOnWay.clear();
+        helpersOnWay.addAll(
+            helpersByRequest[activeEmergencyRequesterId!] ?? <String>{});
+        activities.insert(0, {
+          "title": "You are coming to help Taxi $activeEmergencyRequesterName",
+          "time": _currentActivityTime(),
+        });
       });
-    });
+    }
 
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
@@ -495,6 +551,7 @@ class _HomePageState extends State<HomePage> {
   @override
   void initState() {
     super.initState();
+    _loadSavedUserProfile();
     socketService.connect();
     _setupSocketListeners();
 
@@ -735,6 +792,9 @@ class _HomePageState extends State<HomePage> {
                   ],
                 ),
                 const SizedBox(height: 16),
+                if (activeEmergencyRequesterId != null) _emergencyAlertCard(),
+                if (helpersOnWay.isNotEmpty) _helpersOnWayCard(),
+                const SizedBox(height: 16),
                 _activityHistory(),
                 const SizedBox(height: 16),
                 _nearbyTaxisSection(),
@@ -939,6 +999,120 @@ class _HomePageState extends State<HomePage> {
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _emergencyAlertCard() {
+    final bool isRequester = activeEmergencyRequesterId == taxId;
+    final String title =
+        isRequester ? 'Emergency request sent' : 'Emergency alert received';
+    final String subtitle = isRequester
+        ? 'Your alert is active. Waiting for drivers to respond.'
+        : 'Taxi ${activeEmergencyRequesterName ?? activeEmergencyRequesterId} needs help.';
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: isRequester ? Colors.red.shade900 : Colors.orange.shade900,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.yellow, width: 1.5),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            subtitle,
+            style: const TextStyle(color: Colors.white70),
+          ),
+          const SizedBox(height: 10),
+          if (!isRequester)
+            Text(
+              'Tap "I am coming" to respond and notify the requester.',
+              style: const TextStyle(color: Colors.white70),
+            ),
+          if (isRequester)
+            Padding(
+              padding: const EdgeInsets.only(top: 12.0),
+              child: ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.black,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                onPressed: stopEmergencyAlert,
+                child: const Text(
+                  'Cancel Emergency',
+                  style: TextStyle(color: Colors.white),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _helpersOnWayCard() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: Colors.green.shade900,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.yellow, width: 1.5),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Helpers on the way',
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            '${helpersOnWay.length} taxi(s) are coming to help.',
+            style: const TextStyle(color: Colors.white70),
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: helpersOnWay
+                .map((helper) => Container(
+                      padding: const EdgeInsets.symmetric(
+                          vertical: 6, horizontal: 10),
+                      decoration: BoxDecoration(
+                        color: Colors.yellow.shade700,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(
+                        helper,
+                        style: const TextStyle(
+                          color: Colors.black,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ))
+                .toList(),
+          ),
+        ],
       ),
     );
   }
