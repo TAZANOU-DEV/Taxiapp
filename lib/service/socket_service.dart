@@ -9,6 +9,7 @@ class SocketService {
   void Function(dynamic)? onOrderStatusUpdate;
   void Function(dynamic)? onEmergencyAlert;
   void Function(dynamic)? onHelpOnWayUpdate;
+  void Function(dynamic)? onEmergencyCleared;
   void Function(String)? onTaxiOffline;
 
   void connect() {
@@ -119,6 +120,19 @@ class SocketService {
       );
     });
 
+    // Listen for emergency cleared events
+    socket.on('emergency_cleared', (data) {
+      debugPrint('Emergency cleared: $data');
+      if (onEmergencyCleared != null) {
+        onEmergencyCleared!(Map<String, dynamic>.from(data));
+      }
+      NotificationService.showNotification(
+        title: 'Emergency Resolved',
+        body: 'The emergency has been marked as resolved.',
+        type: 'update',
+      );
+    });
+
     // Listen for location updates
     socket.on('locationUpdate', (data) {
       debugPrint('Location update: $data');
@@ -181,13 +195,26 @@ class SocketService {
     });
   }
 
-  void sendEmergency(String taxiId, double lat, double lng, String message) {
-    socket.emit('emergency', {
+  void sendEmergency(
+    String taxiId,
+    double lat,
+    double lng,
+    String message, {
+    String? taxiNumber,
+    String? driverName,
+    String? email,
+  }) {
+    final payload = {
       'taxiId': taxiId,
       'lat': lat,
       'lng': lng,
       'message': message,
-    });
+    };
+    if (taxiNumber != null) payload['taxiNumber'] = taxiNumber;
+    if (driverName != null) payload['driverName'] = driverName;
+    if (email != null) payload['email'] = email;
+
+    socket.emit('emergency', payload);
     NotificationService.showNotification(
       title: 'Emergency Alert Sent',
       body: 'Your emergency alert has been sent to nearby drivers',
@@ -196,17 +223,42 @@ class SocketService {
   }
 
   void sendHelpOnWay(
-      String requestingTaxiId, String helperTaxiId, double lat, double lng) {
-    socket.emit('help_on_way', {
+    String requestingTaxiId,
+    String helperTaxiId,
+    double lat,
+    double lng, {
+    double? emergencyLat,
+    double? emergencyLng,
+  }) {
+    final payload = {
       'requestingTaxiId': requestingTaxiId,
       'helperTaxiId': helperTaxiId,
       'lat': lat,
       'lng': lng,
       'message': 'Help is on the way',
-    });
+    };
+    if (emergencyLat != null) {
+      payload['emergencyLat'] = emergencyLat;
+    }
+    if (emergencyLng != null) {
+      payload['emergencyLng'] = emergencyLng;
+    }
+    socket.emit('help_on_way', payload);
     NotificationService.showNotification(
       title: 'Help Sent',
       body: 'You notified the requester that help is on the way.',
+      type: 'update',
+    );
+  }
+
+  void sendEmergencyCleared(String taxiId) {
+    socket.emit('emergency_cleared', {
+      'taxiId': taxiId,
+      'timestamp': DateTime.now().toIso8601String(),
+    });
+    NotificationService.showNotification(
+      title: 'Emergency Cleared',
+      body: 'You marked the emergency as resolved.',
       type: 'update',
     );
   }

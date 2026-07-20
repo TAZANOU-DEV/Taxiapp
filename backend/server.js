@@ -293,7 +293,15 @@ io.on('connection', (socket) => {
   // Emergency alert
   socket.on('emergency', async (data) => {
     try {
-      const { taxiId, lat, lng, message = 'Emergency alert' } = data;
+      const {
+        taxiId,
+        lat,
+        lng,
+        message = 'Emergency alert',
+        taxiNumber,
+        driverName,
+        email,
+      } = data;
 
       // Log emergency in database
       await db.query(`
@@ -303,10 +311,13 @@ io.on('connection', (socket) => {
 
       io.emit('emergencyAlert', {
         taxiId,
+        taxiNumber: taxiNumber || taxiId,
+        driverName: driverName || 'Unknown',
+        email: email || null,
         lat,
         lng,
         message,
-        timestamp: new Date()
+        timestamp: new Date(),
       });
 
       console.log('🚨 Emergency broadcast from:', taxiId);
@@ -324,6 +335,8 @@ io.on('connection', (socket) => {
         helperTaxiId,
         lat,
         lng,
+        emergencyLat,
+        emergencyLng,
         message = 'Help is on the way',
       } = data;
 
@@ -337,6 +350,8 @@ io.on('connection', (socket) => {
         helperTaxiId,
         lat,
         lng,
+        emergencyLat: emergencyLat || null,
+        emergencyLng: emergencyLng || null,
         message,
         timestamp: new Date(),
       });
@@ -345,6 +360,27 @@ io.on('connection', (socket) => {
     } catch (error) {
       console.error('❌ Error processing help_on_way:', error);
       socket.emit('error', { message: 'Failed to send help on way notification' });
+    }
+  });
+
+  // Emergency cleared
+  socket.on('emergency_cleared', async (data) => {
+    try {
+      const { taxiId, timestamp } = data;
+      await db.query(`
+        INSERT INTO activities (taxi_id, title, description, type)
+        VALUES (?, ?, ?, 'emergency')
+      `, [taxiId, '🚨 Emergency Resolved', 'Emergency alert cleared',]);
+
+      io.emit('emergency_cleared', {
+        taxiId,
+        timestamp: timestamp || new Date().toISOString(),
+      });
+
+      console.log(`✅ Emergency for taxi ${taxiId} has been cleared`);
+    } catch (error) {
+      console.error('❌ Error processing emergency_cleared:', error);
+      socket.emit('error', { message: 'Failed to clear emergency alert' });
     }
   });
 
