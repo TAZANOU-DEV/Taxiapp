@@ -21,10 +21,7 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
   bool _isResetting = false;
 
   String get baseUrl {
-    if (kIsWeb) {
-      return 'http://localhost:3000';
-    }
-    return 'http://10.0.2.2:3000';
+    return 'http://192.168.56.1:3000';
   }
 
   Future<void> _sendResetToken() async {

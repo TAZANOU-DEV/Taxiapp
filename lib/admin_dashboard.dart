@@ -18,10 +18,7 @@ class AdminDashboard extends StatefulWidget {
 
 class _AdminDashboardState extends State<AdminDashboard> {
   String get baseUrl {
-    if (kIsWeb) {
-      return 'http://localhost:3000';
-    }
-    return 'http://10.0.2.2:3000';
+    return 'http://192.168.56.1:3000';
   }
 
   _AdminTab _selectedTab = _AdminTab.overview;

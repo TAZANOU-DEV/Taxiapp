@@ -12,7 +12,7 @@ class SocketService {
   void Function(String)? onTaxiOffline;
 
   void connect() {
-    const serverUrl = kIsWeb ? 'http://localhost:3000' : 'http://10.0.2.2:3000';
+    const serverUrl = 'http://192.168.56.1:3000';
     socket = IO.io(serverUrl, <String, dynamic>{
       'transports': ['websocket'],
       'autoConnect': false,

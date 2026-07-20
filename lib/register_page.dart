@@ -15,10 +15,7 @@ class RegisterPage extends StatefulWidget {
 
 class _RegisterPageState extends State<RegisterPage> {
   String get baseUrl {
-    if (kIsWeb) {
-      return 'http://localhost:3000';
-    }
-    return 'http://10.0.2.2:3000'; // Android emulator local backend
+    return 'http://192.168.56.1:3000';
   }
 
   final TextEditingController _nameController = TextEditingController();
