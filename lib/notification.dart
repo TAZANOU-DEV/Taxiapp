@@ -141,7 +141,7 @@ class NotificationService {
       final user = jsonDecode(userData);
       final taxiId = user['email']; // Using email as taxi ID for now
 
-      const baseUrl = 'http://192.168.56.1:3000';
+      const baseUrl = 'http://10.95.105.200:3000';
 
       final response = await http.post(
         Uri.parse('$baseUrl/api/activities'),

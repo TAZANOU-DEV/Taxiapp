@@ -38,7 +38,7 @@ const emailEnabled = Boolean(process.env.SMTP_HOST && process.env.SMTP_USER && p
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
 const sendPasswordResetEmail = async (email, token) => {
-  const resetUrl = `${process.env.FRONTEND_URL || 'http://192.168.56.1:8080'}/reset-password?token=${token}`;
+  const resetUrl = `${process.env.FRONTEND_URL || 'http://10.95.105.200:8080'}/reset-password?token=${token}`;
   const message = {
     from: process.env.PASSWORD_RESET_FROM || process.env.SMTP_USER || 'no-reply@taxiapp.com',
     to: email,

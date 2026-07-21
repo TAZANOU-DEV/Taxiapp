@@ -62,7 +62,7 @@ class _HomePageState extends State<HomePage> {
   ];
 
   String get backendBaseUrl {
-    return 'http://192.168.56.1:3000';
+    return 'http://10.95.105.200:3000';
   }
 
   Future<void> sendEmergency() async {

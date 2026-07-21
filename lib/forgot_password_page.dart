@@ -21,7 +21,7 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
   bool _isResetting = false;
 
   String get baseUrl {
-    return 'http://192.168.56.1:3000';
+    return 'http://10.95.105.200:3000';
   }
 
   Future<void> _sendResetToken() async {

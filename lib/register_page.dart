@@ -15,7 +15,7 @@ class RegisterPage extends StatefulWidget {
 
 class _RegisterPageState extends State<RegisterPage> {
   String get baseUrl {
-    return 'http://192.168.56.1:3000';
+    return 'http://10.95.105.200:3000';
   }
 
   final TextEditingController _nameController = TextEditingController();
