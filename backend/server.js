@@ -78,6 +78,11 @@ app.get('/health', (req, res) => {
   });
 });
 
+// Route d'accueil racine pour éviter le 404 lorsque Vercel ouvre /
+app.get('/', (req, res) => {
+  res.send('API Backend Taxi App est opérationnelle ! 🚀');
+});
+
 // Import backend routes under /api/* so Vercel can route /api/(.*) to this server
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/admin', require('./routes/admin'));
