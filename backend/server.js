@@ -438,7 +438,13 @@ io.on('connection', (socket) => {
 });
 
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, '0.0.0.0', () => {
-  console.log(`🚀 Backend server running on port ${PORT}`);
-  console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
-});
+
+if (require.main === module) {
+  server.listen(PORT, '0.0.0.0', () => {
+    console.log(`🚀 Backend server running on port ${PORT}`);
+    console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
+  });
+}
+
+// Export the Express app for serverless platforms (e.g., Vercel)
+module.exports = app;

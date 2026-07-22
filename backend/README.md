@@ -41,18 +41,27 @@ A comprehensive backend API for a taxi emergency and communication application b
    ```
 
 3. **Environment Setup**
-   - Copy `.env` file and update the values:
+   - Copy `.env.example` to `.env`:
    ```bash
    cp .env.example .env
    ```
    - Update the following variables in `.env`:
-   ```
+   ```env
    DB_HOST=localhost
    DB_USER=your_mysql_username
    DB_PASSWORD=your_mysql_password
    DB_NAME=taxi_emergency_app
    JWT_SECRET=your_super_secret_jwt_key_here
    PORT=3000
+   ```
+   - If you are using a remote database or TiDB Cloud, enable SSL and set your remote host/port:
+   ```env
+   DB_SSL=true
+   DB_SSL_MIN_VERSION=TLSv1.2
+   DB_SSL_REJECT_UNAUTHORIZED=true
+   # DB_SSL_CA=/path/to/ca.pem
+   DB_HOST=your-remote-db-host
+   DB_PORT=4000
    ```
 
 4. **Database Setup**
@@ -75,6 +84,24 @@ npm start
 ```
 
 The server will start on port 3000 (or the port specified in `.env`).
+
+## Remote Database / TiDB Cloud
+
+If your database is hosted remotely or on TiDB Cloud, set the following environment variables in `.env`:
+
+```env
+DB_HOST=your-remote-db-host
+DB_PORT=4000
+DB_USER=your_tidb_user
+DB_PASSWORD=your_tidb_password
+DB_NAME=taxi_emergency_app
+DB_SSL=true
+DB_SSL_MIN_VERSION=TLSv1.2
+DB_SSL_REJECT_UNAUTHORIZED=true
+# DB_SSL_CA=/path/to/ca.pem
+```
+
+The backend is configured to use SSL when `DB_SSL=true`, and it will optionally load a CA certificate from `DB_SSL_CA` if provided.
 
 ## API Endpoints
 

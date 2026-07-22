@@ -9,13 +9,30 @@ const path = require('path');
 require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 const mysql = require('mysql2/promise');
 
+const fs = require('fs');
 const config = {
   host: process.env.DB_HOST || 'localhost',
   user: process.env.DB_USER || 'root',
   password: process.env.DB_PASSWORD || '',
-  port: process.env.DB_PORT || 3306,
+  port: Number(process.env.DB_PORT) || 4000,
   database: process.env.DB_NAME || 'taxi_emergency_app'
 };
+
+const sslConfig = {};
+if (process.env.DB_SSL === 'true') {
+  sslConfig.ssl = {
+    minVersion: process.env.DB_SSL_MIN_VERSION || 'TLSv1.2',
+    rejectUnauthorized:
+      process.env.DB_SSL_REJECT_UNAUTHORIZED !== 'false',
+  };
+  if (process.env.DB_SSL_CA) {
+    try {
+      sslConfig.ssl.ca = fs.readFileSync(process.env.DB_SSL_CA, 'utf8');
+    } catch (err) {
+      console.warn('⚠️  Could not read DB_SSL_CA file:', err.message);
+    }
+  }
+}
 
 async function testConnection() {
   console.log('\n🧪 MySQL Connection Test');
@@ -30,7 +47,7 @@ async function testConnection() {
   try {
     // Test 1: Connect without specific database
     console.log('1️⃣  Connecting to MySQL server...');
-    const testConfig = { ...config };
+    const testConfig = { ...config, ...sslConfig };
     delete testConfig.database;
     
     const connection = await mysql.createConnection(testConfig);
@@ -54,7 +71,7 @@ async function testConnection() {
     // Test 3: List all tables if database exists
     if (databases.length > 0) {
       console.log('3️⃣  Checking database tables...');
-      const poolConfig = { ...config, waitForConnections: true, connectionLimit: 1 };
+      const poolConfig = { ...config, ...sslConfig, waitForConnections: true, connectionLimit: 1 };
       const pool = mysql.createPool(poolConfig);
       
       const [tables] = await pool.query('SHOW TABLES');
