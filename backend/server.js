@@ -78,7 +78,7 @@ app.get('/health', (req, res) => {
   });
 });
 
-// Import routes
+// Import backend routes under /api/* so Vercel can route /api/(.*) to this server
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/admin', require('./routes/admin'));
 app.use('/api/drivers', require('./routes/drivers'));
