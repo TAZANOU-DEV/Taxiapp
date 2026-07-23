@@ -25,7 +25,7 @@ if (process.env.DB_SSL === 'true') {
     rejectUnauthorized:
       process.env.DB_SSL_REJECT_UNAUTHORIZED !== 'false',
   };
-  if (process.env.DB_SSL_CA) {
+  if (process.env.DB_SSL_CA && fs.existsSync(process.env.DB_SSL_CA)) {
     try {
       sslConfig.ssl.ca = fs.readFileSync(process.env.DB_SSL_CA, 'utf8');
     } catch (err) {

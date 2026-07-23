@@ -1,10 +1,19 @@
 const path = require('path');
 require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
-const db = require('../db');
+const mysql = require('mysql2/promise');
 const bcrypt = require('bcryptjs');
 
+let db;
+const getDb = () => {
+  if (!db) {
+    db = require('../db');
+  }
+  return db;
+};
+
 const ensureColumn = async (tableName, columnName, definition) => {
-  const [columns] = await db.query(
+  const connectionDb = getDb();
+  const [columns] = await connectionDb.query(
     `
     SELECT COLUMN_NAME
     FROM INFORMATION_SCHEMA.COLUMNS
@@ -16,7 +25,7 @@ const ensureColumn = async (tableName, columnName, definition) => {
   );
 
   if (columns.length === 0) {
-    await db.query(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${definition}`);
+    await connectionDb.query(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${definition}`);
   }
 };
 
@@ -24,15 +33,32 @@ const initDatabase = async () => {
   try {
     console.log('🚀 Initializing database...');
 
-    // Create database if it doesn't exist
-    await db.query(`CREATE DATABASE IF NOT EXISTS ${process.env.DB_NAME}`);
+    const databaseName = process.env.DB_NAME || 'taxi_emergency_app';
+
+    const tempConnection = await mysql.createConnection({
+      host: process.env.DB_HOST || 'localhost',
+      user: process.env.DB_USER || 'root',
+      password: process.env.DB_PASSWORD || '',
+      port: Number(process.env.DB_PORT) || 4000,
+      ...(process.env.DB_SSL === 'true' ? {
+        ssl: {
+          minVersion: process.env.DB_SSL_MIN_VERSION || 'TLSv1.2',
+          rejectUnauthorized: process.env.DB_SSL_REJECT_UNAUTHORIZED !== 'false',
+        },
+      } : {}),
+    });
+
+    await tempConnection.query(`CREATE DATABASE IF NOT EXISTS \`${databaseName}\``);
+    await tempConnection.end();
     console.log('✅ Database created or already exists');
 
+    const connectionDb = getDb();
+
     // Use the database
-    await db.query(`USE ${process.env.DB_NAME}`);
+    await connectionDb.query(`USE \`${databaseName}\``);
 
     // Create taxis table
-    await db.query(`
+    await connectionDb.query(`
       CREATE TABLE IF NOT EXISTS taxis (
         id INT AUTO_INCREMENT PRIMARY KEY,
         taxi_id VARCHAR(50) UNIQUE NOT NULL,
@@ -52,7 +78,7 @@ const initDatabase = async () => {
     console.log('✅ Taxis table created');
 
     // Create activities table
-    await db.query(`
+    await connectionDb.query(`
       CREATE TABLE IF NOT EXISTS activities (
         id INT AUTO_INCREMENT PRIMARY KEY,
         taxi_id VARCHAR(50) NOT NULL,
@@ -67,7 +93,7 @@ const initDatabase = async () => {
     console.log('✅ Activities table created');
 
     // Create taxi_orders table
-    await db.query(`
+    await connectionDb.query(`
       CREATE TABLE IF NOT EXISTS taxi_orders (
         id INT AUTO_INCREMENT PRIMARY KEY,
         from_taxi_id VARCHAR(50) NOT NULL,
@@ -90,7 +116,7 @@ const initDatabase = async () => {
     console.log('✅ Taxi orders table created');
 
     // Create users table
-    await db.query(`
+    await connectionDb.query(`
       CREATE TABLE IF NOT EXISTS users (
         id INT AUTO_INCREMENT PRIMARY KEY,
         username VARCHAR(50) UNIQUE NOT NULL,
@@ -115,7 +141,7 @@ const initDatabase = async () => {
     console.log('✅ Users table created');
 
     // Create legacy drivers table (optional compatibility; some setups use it separately from `users`)
-    await db.query(`
+    await connectionDb.query(`
       CREATE TABLE IF NOT EXISTS drivers (
         driver_id INT NOT NULL AUTO_INCREMENT,
         full_name VARCHAR(100) NOT NULL,
@@ -135,7 +161,7 @@ const initDatabase = async () => {
     console.log('✅ Drivers table created');
 
     // Create legacy emergency alerts table (driver-centric and taxi-centric)
-    await db.query(`
+    await connectionDb.query(`
       CREATE TABLE IF NOT EXISTS emergency_alerts (
         alert_id INT NOT NULL AUTO_INCREMENT,
         taxi_id VARCHAR(50) DEFAULT NULL,
@@ -154,14 +180,14 @@ const initDatabase = async () => {
 
     await ensureColumn('emergency_alerts', 'taxi_id', 'VARCHAR(50) DEFAULT NULL');
     try {
-      await db.query(`ALTER TABLE emergency_alerts MODIFY COLUMN driver_id INT DEFAULT NULL`);
+      await connectionDb.query(`ALTER TABLE emergency_alerts MODIFY COLUMN driver_id INT DEFAULT NULL`);
     } catch (error) {
       // Ignore if modification is not needed.
     }
     await ensureColumn('emergency_alerts', 'message', 'TEXT DEFAULT NULL');
 
     // Create legacy activity table (driver-centric)
-    await db.query(`
+    await connectionDb.query(`
       CREATE TABLE IF NOT EXISTS activity (
         activity_id INT NOT NULL AUTO_INCREMENT,
         driver_id INT NOT NULL,
@@ -211,7 +237,7 @@ const initDatabase = async () => {
       const saltRounds = 10;
       const passwordHash = await bcrypt.hash(user.password, saltRounds);
 
-      await db.query(
+      await connectionDb.query(
         'INSERT INTO users (username, email, password_hash, role, phone) VALUES (?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE username = username',
         [user.username, user.email, passwordHash, user.role, user.phone]
       );
@@ -227,7 +253,7 @@ const initDatabase = async () => {
     ];
 
     for (const taxi of sampleTaxis) {
-      await db.query(`
+      await connectionDb.query(`
         INSERT INTO taxis (taxi_id, lat, lng, vehicle_model, license_plate, driver_name, phone)
         VALUES (?, ?, ?, ?, ?, ?, ?)
         ON DUPLICATE KEY UPDATE

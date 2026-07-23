@@ -22,7 +22,7 @@ if (process.env.DB_SSL === 'true') {
       process.env.DB_SSL_REJECT_UNAUTHORIZED !== 'false',
   };
 
-  if (process.env.DB_SSL_CA) {
+  if (process.env.DB_SSL_CA && fs.existsSync(process.env.DB_SSL_CA)) {
     try {
       poolConfig.ssl.ca = fs.readFileSync(process.env.DB_SSL_CA, 'utf8');
     } catch (err) {
