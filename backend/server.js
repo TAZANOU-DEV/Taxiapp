@@ -7,30 +7,35 @@ const { Server } = require('socket.io');
 const db = require('./db');
 const multer = require('multer');
 
+// Migration de la base de données sécurisée (asynchrone & non bloquante)
 const migrateAuthSchema = async () => {
   try {
-    await db.query(`ALTER TABLE users ADD COLUMN provider VARCHAR(50)`);
+    const columns = [
+      `ALTER TABLE users ADD COLUMN provider VARCHAR(50)`,
+      `ALTER TABLE users ADD COLUMN provider_id VARCHAR(255)`,
+      `ALTER TABLE users ADD COLUMN reset_token VARCHAR(255)`,
+      `ALTER TABLE users ADD COLUMN reset_token_expires DATETIME`
+    ];
+
+    for (const query of columns) {
+      try {
+        await db.query(query);
+      } catch (err) {
+        if (!err.message.includes('Duplicate column name')) {
+          console.warn('⚠️ Migration query warning:', err.message);
+        }
+      }
+    }
+    console.log('✅ Auth schema migration checked');
   } catch (err) {
-    if (!err.message.includes('Duplicate column name')) throw err;
-  }
-  try {
-    await db.query(`ALTER TABLE users ADD COLUMN provider_id VARCHAR(255)`);
-  } catch (err) {
-    if (!err.message.includes('Duplicate column name')) throw err;
-  }
-  try {
-    await db.query(`ALTER TABLE users ADD COLUMN reset_token VARCHAR(255)`);
-  } catch (err) {
-    if (!err.message.includes('Duplicate column name')) throw err;
-  }
-  try {
-    await db.query(`ALTER TABLE users ADD COLUMN reset_token_expires DATETIME`);
-  } catch (err) {
-    if (!err.message.includes('Duplicate column name')) throw err;
+    console.error('❌ Migration failed (non-blocking):', err.message);
   }
 };
 
-migrateAuthSchema();
+// Lancement asynchrone non-bloquant pour Serverless / Vercel
+(async () => {
+  await migrateAuthSchema();
+})();
 
 const app = express();
 const server = http.createServer(app);
@@ -101,7 +106,7 @@ app.use((err, req, res, next) => {
   console.error('Error:', err);
   
   // Handle database connection errors
-  if (err.code === 'PROTOCOL_CONNECTION_LOST' || err.code === 'PROTOCOL_ENQUEUE_AFTER_FATAL_ERROR' || err.code === 'PROTOCOL_ENQUEUE_AFTER_FATAL_ERROR') {
+  if (err.code === 'PROTOCOL_CONNECTION_LOST' || err.code === 'PROTOCOL_ENQUEUE_AFTER_FATAL_ERROR' || err.code === 'ETIMEDOUT') {
     return res.status(503).json({
       error: 'Service unavailable',
       message: 'Database connection failed. Please try again later.'
@@ -375,7 +380,7 @@ io.on('connection', (socket) => {
       await db.query(`
         INSERT INTO activities (taxi_id, title, description, type)
         VALUES (?, ?, ?, 'emergency')
-      `, [taxiId, '🚨 Emergency Resolved', 'Emergency alert cleared',]);
+      `, [taxiId, '🚨 Emergency Resolved', 'Emergency alert cleared']);
 
       io.emit('emergency_cleared', {
         taxiId,
