@@ -3,11 +3,13 @@ const path = require('path');
 require('dotenv').config({ path: path.join(__dirname, '.env') });
 const mysql = require('mysql2/promise');
 
+const databaseName = process.env.DB_NAME || 'taxi_emergency_app';
+
 const poolConfig = {
   host: process.env.DB_HOST || 'localhost',
   user: process.env.DB_USER || 'root',
   password: process.env.DB_PASSWORD || '',
-  database: process.env.DB_NAME || 'taxi_emergency_app',
+  database: databaseName,
   port: Number(process.env.DB_PORT) || 4000,
   waitForConnections: true,
   connectionLimit: 10,
@@ -33,14 +35,30 @@ if (process.env.DB_SSL === 'true') {
 
 const pool = mysql.createPool(poolConfig);
 
+const ensureDatabase = async () => {
+  try {
+    const [rows] = await pool.query('SELECT DATABASE() AS current_db');
+    const currentDb = rows?.[0]?.current_db;
+
+    if (currentDb !== databaseName) {
+      await pool.query(`USE \`${databaseName}\``);
+    }
+
+    console.log(`✅ Database selected: ${databaseName}`);
+  } catch (err) {
+    console.warn('⚠️  Could not ensure database selection:', err.message);
+  }
+};
+
 // Test database connection with retry logic
 let connectionAttempts = 0;
 const maxAttempts = 5;
 
 const testConnection = () => {
   pool.getConnection()
-    .then(connection => {
+    .then(async connection => {
       console.log('✅ Database connected successfully');
+      await ensureDatabase();
       connection.release();
       connectionAttempts = 0; // Reset on success
     })
