@@ -1,15 +1,11 @@
-# Implementation Plan - Taxi App Fixes ✅ COMPLETED
+# Task: Fix Text Color to Black on Yellow Background Pages
 
-## Part A: Fix Emergency Button Notifications ✅
-- [x] 1. Upgrade NotificationService - Add in-app overlay alerts, vibration, sound cues
-- [x] 2. Add persistent in-app emergency banner in HomePage (via navigatorKey overlay dialog)
-- [x] 3. Fix HTTP emergency route error handling in taxiroutes.js
-- [x] 4. Add SMS/police notification capabilities in taxiroutes.js
+## Steps
+- [x] 1. Analyze the issue: White text on yellow background due to dark theme default
+- [x] 2. Get user confirmation on the plan
 
-## Part B: Fix User Profile & Settings Persistence ✅
-- [x] 5. Fix registration page - save auth token after registration
-- [x] 6. Rewrite SettingsPage - load real data from SharedPreferences & backend
-- [x] 7. Connect settings fields to actual backend API calls
-- [x] 8. Persist theme & language choices app-wide
-- [x] 9. Add app_settings endpoint in auth.js backend
-- [x] 10. Update main.dart for global theme/language state
+## Editing Phase
+- [x] 3. Fix `lib/login_page.dart` - Added `color: Colors.black` to: "Taximan Login", "Driver Login", "Admin Login", "Remember me", "Or continue with", "Don't have an account?"
+- [x] 4. Fix `lib/register_page.dart` - Added `color: Colors.black` to: "Taximan Registration", "Already have an account?"
+- [ ] 5. Commit changes and push to repository
+

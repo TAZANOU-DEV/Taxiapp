@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/http.dart' as http;
@@ -237,7 +236,10 @@ class _LoginPageState extends State<LoginPage> {
             children: [
               const Text(
                 "Taximan Login",
-                style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
+                style: TextStyle(
+                    fontSize: 28,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.black),
               ),
 
               const SizedBox(height: 10),
@@ -248,7 +250,8 @@ class _LoginPageState extends State<LoginPage> {
                 crossAxisAlignment: WrapCrossAlignment.center,
                 spacing: 8,
                 children: [
-                  const Text("Driver Login"),
+                  const Text("Driver Login",
+                      style: TextStyle(color: Colors.black)),
                   Switch(
                     value: _isAdminLogin,
                     onChanged: (value) {
@@ -258,7 +261,8 @@ class _LoginPageState extends State<LoginPage> {
                     },
                     activeThumbColor: Colors.black,
                   ),
-                  const Text("Admin Login"),
+                  const Text("Admin Login",
+                      style: TextStyle(color: Colors.black)),
                 ],
               ),
 
@@ -324,7 +328,8 @@ class _LoginPageState extends State<LoginPage> {
                       });
                     },
                   ),
-                  const Text("Remember me"),
+                  const Text("Remember me",
+                      style: TextStyle(color: Colors.black)),
                 ],
               ),
               const SizedBox(height: 10),
@@ -364,7 +369,7 @@ class _LoginPageState extends State<LoginPage> {
               const SizedBox(height: 20),
               const Text(
                 'Or continue with',
-                style: TextStyle(fontSize: 14),
+                style: TextStyle(fontSize: 14, color: Colors.black),
               ),
               const SizedBox(height: 12),
               SizedBox(
@@ -402,7 +407,8 @@ class _LoginPageState extends State<LoginPage> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  const Text("Don't have an account? "),
+                  const Text("Don't have an account? ",
+                      style: TextStyle(color: Colors.black)),
                   TextButton(
                     onPressed: () {
                       Navigator.push(

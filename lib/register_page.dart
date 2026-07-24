@@ -198,7 +198,10 @@ class _RegisterPageState extends State<RegisterPage> {
             children: [
               const Text(
                 "Taximan Registration",
-                style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
+                style: TextStyle(
+                    fontSize: 28,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.black),
               ),
               const SizedBox(height: 30),
               TextField(
@@ -337,7 +340,8 @@ class _RegisterPageState extends State<RegisterPage> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  const Text("Already have an account? "),
+                  const Text("Already have an account? ",
+                      style: TextStyle(color: Colors.black)),
                   TextButton(
                     onPressed: () {
                       Navigator.pushNamedAndRemoveUntil(
