@@ -280,90 +280,114 @@ router.post('/social-login', async (req, res) => {
 
 // Register new user/driver
 router.post('/register', async (req, res) => {
+  let connection;
+  let userId;
+  let driverId;
+  let taxiCreated = false;
+
   try {
-    const { username, email, password, role = 'driver', phone, vehicleModel, licensePlate } = req.body;
+    const {
+      username,
+      full_name: fullName,
+      email,
+      password,
+      phone,
+      phone_number: phoneNumber,
+      vehicleModel,
+      licensePlate,
+      taxi_matricule: taxiMatricule,
+    } = req.body;
 
     const normalizedEmail = typeof email === 'string' ? email.trim().toLowerCase() : '';
-    const normalizedUsername = typeof username === 'string' ? username.trim() : '';
+    const name = username || fullName;
+    const licence = licensePlate || taxiMatricule;
+    const phoneValue = phone || phoneNumber;
+    const normalizedUsername = typeof name === 'string' ? name.trim() : '';
+    const normalizedLicensePlate = typeof licence === 'string' ? licence.trim() : '';
+    const normalizedPhone = typeof phoneValue === 'string' ? phoneValue.trim() : null;
+    const role = 'driver';
 
-    if (!normalizedUsername || !normalizedEmail || !password) {
-      return res.status(400).json({ error: 'Username, email, and password are required' });
+    if (!normalizedUsername || !normalizedEmail || !password || !normalizedLicensePlate) {
+      return res.status(400).json({
+        error: 'Name, email, password, and taxi registration number are required',
+      });
     }
 
-    // Check if user already exists
-    const [existing] = await db.query(
+    connection = await db.getConnection();
+
+    const [existingUsers] = await connection.query(
       'SELECT id FROM users WHERE email = ? OR username = ?',
       [normalizedEmail, normalizedUsername]
     );
 
-    if (existing.length > 0) {
+    if (existingUsers.length > 0) {
       return res.status(409).json({ error: 'User already exists' });
     }
 
-    // Hash password
-    const saltRounds = 10;
-    const passwordHash = await bcrypt.hash(password, saltRounds);
-
-    // Insert user
-    const [result] = await db.query(
-      'INSERT INTO users (username, email, password_hash, role) VALUES (?, ?, ?, ?)',
-      [normalizedUsername, normalizedEmail, passwordHash, role]
+    const [existingDrivers] = await connection.query(
+      'SELECT driver_id FROM drivers WHERE email = ? OR taxi_matricule = ? LIMIT 1',
+      [normalizedEmail, normalizedLicensePlate]
     );
 
-    const userId = result.insertId;
-
-    // If driver, create taxi profile
-    if (role === 'driver' && vehicleModel && licensePlate) {
-      const taxiId = `TX-${userId.toString().padStart(4, '0')}`;
-      await db.query(
-        // lat/lng are required in the current schema; default to 0 until the driver sends location updates.
-        'INSERT INTO taxis (taxi_id, lat, lng, is_online, vehicle_model, license_plate, driver_name, phone) VALUES (?, 0, 0, false, ?, ?, ?, ?)',
-        [taxiId, vehicleModel, licensePlate, normalizedUsername, phone]
-      );
-
-      // Mirror driver profile into legacy `drivers` table (if present in your DB).
-      // Auth still uses `users` as source of truth.
-      try {
-        await db.query(
-          `
-          INSERT INTO drivers (full_name, email, taxi_matricule, phone_number, password, is_online)
-          VALUES (?, ?, ?, ?, ?, 0) AS new
-          ON DUPLICATE KEY UPDATE
-            full_name = new.full_name,
-            email = new.email,
-            phone_number = new.phone_number,
-            password = new.password,
-            is_online = new.is_online,
-            updated_at = CURRENT_TIMESTAMP
-          `,
-          [normalizedUsername, normalizedEmail, licensePlate, phone || null, passwordHash]
-        );
-      } catch (e) {
-        console.warn('Drivers table insert skipped:', e.message);
-      }
+    if (existingDrivers.length > 0) {
+      return res.status(409).json({ error: 'A driver already uses this email or taxi registration number' });
     }
+
+    const passwordHash = await bcrypt.hash(password, 10);
+
+    const [result] = await connection.query(
+      'INSERT INTO users (username, email, password_hash, role, phone) VALUES (?, ?, ?, ?, ?)',
+      [normalizedUsername, normalizedEmail, passwordHash, role, normalizedPhone]
+    );
+
+    userId = result.insertId;
+    const taxiId = 'TX-' + userId.toString().padStart(4, '0');
+
+    const [driverResult] = await connection.query(
+      'INSERT INTO drivers (full_name, email, taxi_matricule, phone_number, password, is_online) VALUES (?, ?, ?, ?, ?, 0)',
+      [normalizedUsername, normalizedEmail, normalizedLicensePlate, normalizedPhone, passwordHash]
+    );
+    driverId = driverResult.insertId;
+
+    await connection.query(
+      'INSERT INTO taxis (taxi_id, lat, lng, is_online, vehicle_model, license_plate, driver_name, phone) VALUES (?, 0, 0, false, ?, ?, ?, ?)',
+      [taxiId, vehicleModel || 'Taxi', normalizedLicensePlate, normalizedUsername, normalizedPhone]
+    );
+    taxiCreated = true;
 
     const userResponse = {
       id: userId,
       username: normalizedUsername,
       email: normalizedEmail,
       role,
+      taxiId,
     };
-
-    if (role === 'driver') {
-      const taxiId = `TX-${userId.toString().padStart(4, '0')}`;
-      userResponse.taxiId = taxiId;
-    }
 
     res.status(201).json({
       success: true,
-      message: 'User registered successfully',
+      message: 'Driver and user account registered successfully',
       user: userResponse,
       userId,
+      driverId,
     });
   } catch (error) {
+    if (connection && userId) {
+      try {
+        if (taxiCreated) {
+          await connection.query('DELETE FROM taxis WHERE taxi_id = ?', ['TX-' + userId.toString().padStart(4, '0')]);
+        }
+        if (driverId) {
+          await connection.query('DELETE FROM drivers WHERE driver_id = ?', [driverId]);
+        }
+        await connection.query('DELETE FROM users WHERE id = ?', [userId]);
+      } catch (cleanupError) {
+        console.error('Registration cleanup error:', cleanupError);
+      }
+    }
     console.error('Registration error:', error);
     res.status(500).json({ error: 'Internal server error' });
+  } finally {
+    connection?.release();
   }
 });
 
