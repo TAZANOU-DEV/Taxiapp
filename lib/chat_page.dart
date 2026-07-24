@@ -39,7 +39,7 @@ class _ChatPageState extends State<ChatPage> {
     // Example: send via HTTP
     try {
       await http.post(
-        Uri.parse('http://10.95.105.200:3000/api/taxi/message'),
+        Uri.parse('https://taxiapp-back.vercel.app/api/taxi/message'),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
           'from': 'Taxi Driver',

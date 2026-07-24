@@ -13,7 +13,7 @@ class SocketService {
   void Function(String)? onTaxiOffline;
 
   void connect() {
-    const serverUrl = 'http://10.95.105.200:3000';
+    const serverUrl = 'https://taxiapp-back.vercel.app';
     socket = IO.io(serverUrl, <String, dynamic>{
       'transports': ['websocket'],
       'autoConnect': false,

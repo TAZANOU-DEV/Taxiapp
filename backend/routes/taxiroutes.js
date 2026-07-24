@@ -87,15 +87,19 @@ router.post('/emergency', asyncHandler(async (req, res) => {
     return res.status(400).json({ error: 'Missing required field: taxiId' });
   }
 
-  // Get taxi details
-  const [taxiResults] = await db.query(
-    'SELECT license_plate, driver_name, phone FROM taxis WHERE taxi_id = ?',
-    [taxiId]
-  );
+  // Get taxi details (with try/catch for resilience)
+  let taxiInfo = {};
+  try {
+    const [taxiResults] = await db.query(
+      'SELECT license_plate, driver_name, phone FROM taxis WHERE taxi_id = ?',
+      [taxiId]
+    );
+    taxiInfo = taxiResults[0] || {};
+  } catch (e) {
+    console.warn('Taxi lookup failed (non-blocking):', e.message || e);
+  }
 
-  const taxiInfo = taxiResults[0] || {};
   let driverId = null;
-
   try {
     const [driverRows] = await db.query(
       `SELECT d.driver_id
@@ -105,7 +109,6 @@ router.post('/emergency', asyncHandler(async (req, res) => {
        LIMIT 1`,
       [taxiId]
     );
-
     if (driverRows && driverRows.length > 0) {
       driverId = driverRows[0].driver_id;
     }
@@ -122,27 +125,91 @@ router.post('/emergency', asyncHandler(async (req, res) => {
     console.warn('Failed to save emergency alert to emergency_alerts table:', e.message || e);
   }
 
-  // Log activity
-  await db.query(
-    'INSERT INTO activities (taxi_id, title, description, type) VALUES (?, ?, ?, ?)',
-    [taxiId, '🚨 Emergency alert sent', message, 'emergency']
-  );
+  // Log activity (non-blocking)
+  try {
+    await db.query(
+      'INSERT INTO activities (taxi_id, title, description, type) VALUES (?, ?, ?, ?)',
+      [taxiId, '🚨 Emergency alert sent', message, 'emergency']
+    );
+  } catch (e) {
+    console.warn('Failed to log activity:', e.message || e);
+  }
 
-  // Broadcast to all connected taxis
-  io.emit('emergencyAlert', {
-    taxiId,
-    taxiNumber: taxiInfo.license_plate || taxiId,
-    driverName: taxiInfo.driver_name || 'Unknown',
-    phone: taxiInfo.phone || '',
-    lat: lat || null,
-    lng: lng || null,
-    message,
-    timestamp: new Date().toISOString()
-  });
+  // Broadcast to all connected taxis via Socket.io
+  try {
+    io.emit('emergencyAlert', {
+      taxiId,
+      taxiNumber: taxiInfo.license_plate || taxiId,
+      driverName: taxiInfo.driver_name || 'Unknown',
+      phone: taxiInfo.phone || '',
+      lat: lat || null,
+      lng: lng || null,
+      message,
+      timestamp: new Date().toISOString()
+    });
+    console.log(`🚨 Emergency broadcast sent for taxi ${taxiId}`);
+  } catch (e) {
+    console.error('Socket broadcast failed:', e.message || e);
+  }
 
-  // TODO: Send to police (e.g., via SMS/email API)
+  // Send SMS notification via external SMS API if configured
+  const smsApiKey = process.env.SMS_API_KEY;
+  const smsApiUrl = process.env.SMS_API_URL;
+  if (smsApiKey && smsApiUrl) {
+    try {
+      const axios = require('axios');
+      await axios.post(smsApiUrl, {
+        apiKey: smsApiKey,
+        to: process.env.EMERGENCY_CONTACT_NUMBER || '',
+        message: `🚨 EMERGENCY: Taxi ${taxiInfo.license_plate || taxiId} (${taxiInfo.driver_name || 'Unknown'}) needs help at https://maps.google.com/?q=${lat || ''},${lng || ''}. ${message}`,
+      });
+      console.log(`📱 SMS notification sent for taxi ${taxiId}`);
+    } catch (e) {
+      console.warn('SMS notification failed (non-blocking):', e.message || e);
+    }
+  }
 
-  res.json({ success: true, message: 'Emergency alert sent to all taxis' });
+  // Send email notification to police/emergency contacts if configured
+  if (process.env.EMERGENCY_EMAIL_TO && process.env.SMTP_HOST) {
+    try {
+      const nodemailer = require('nodemailer');
+      const transporter = nodemailer.createTransport({
+        host: process.env.SMTP_HOST,
+        port: parseInt(process.env.SMTP_PORT || '587', 10),
+        secure: process.env.SMTP_SECURE === 'true',
+        auth: process.env.SMTP_USER && process.env.SMTP_PASS ? {
+          user: process.env.SMTP_USER,
+          pass: process.env.SMTP_PASS
+        } : undefined
+      });
+      await transporter.sendMail({
+        from: process.env.SMTP_USER || 'no-reply@taxiapp.com',
+        to: process.env.EMERGENCY_EMAIL_TO,
+        subject: `🚨 EMERGENCY ALERT - Taxi ${taxiInfo.license_plate || taxiId}`,
+        text: `EMERGENCY ALERT\n\nTaxi: ${taxiInfo.license_plate || taxiId}\nDriver: ${taxiInfo.driver_name || 'Unknown'}\nPhone: ${taxiInfo.phone || 'N/A'}\nLocation: https://maps.google.com/?q=${lat || ''},${lng || ''}\nMessage: ${message}\n\nTimestamp: ${new Date().toISOString()}`,
+      });
+      console.log(`📧 Email notification sent for taxi ${taxiId}`);
+    } catch (e) {
+      console.warn('Email notification failed (non-blocking):', e.message || e);
+    }
+  }
+
+  // Send Push Notification to all connected admins via socket
+  try {
+    io.emit('admin_notification', {
+      type: 'emergency',
+      title: '🚨 Emergency Alert',
+      body: `Taxi ${taxiInfo.license_plate || taxiId} (${taxiInfo.driver_name || 'Unknown'}) needs immediate assistance!`,
+      taxiId,
+      lat: lat || null,
+      lng: lng || null,
+      timestamp: new Date().toISOString()
+    });
+  } catch (e) {
+    console.warn('Admin push notification failed:', e.message || e);
+  }
+
+  res.json({ success: true, message: 'Emergency alert sent to all taxis and emergency contacts' });
 }));
 
 // 📜 Get Activity History

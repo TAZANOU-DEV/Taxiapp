@@ -1,8 +1,11 @@
+import 'dart:convert';
+import 'dart:typed_data';
+
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/http.dart' as http;
-import 'dart:convert';
 
 class NotificationItem {
   final String id;
@@ -22,22 +25,20 @@ class NotificationItem {
   });
 }
 
+/// Global key for showing overlay dialogs from anywhere
+final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
+
 class NotificationService {
   static final FlutterLocalNotificationsPlugin _notificationsPlugin =
       FlutterLocalNotificationsPlugin();
 
   static final List<NotificationItem> _notificationHistory = [];
 
+  /// Callback for when a new notification arrives (used by HomePage for overlay)
+  static void Function(NotificationItem)? onNewNotification;
+
   static Future<void> initialize() async {
-    // Initialization of the native notifications plugin has changed across
-    // plugin versions. To avoid compile errors with different plugin APIs,
-    // keep a lightweight initialization here. If you need platform
-    // notifications, re-enable and adapt this code to the plugin version
-    // you're using.
     try {
-      // best-effort: if the plugin still supports initialize with
-      // InitializationSettings this will succeed; otherwise we silently
-      // continue.
       const AndroidInitializationSettings androidSettings =
           AndroidInitializationSettings('@mipmap/ic_launcher');
       const DarwinInitializationSettings iosSettings =
@@ -46,10 +47,10 @@ class NotificationService {
         android: androidSettings,
         iOS: iosSettings,
       );
-      // ignore: avoid_dynamic_calls
-      await (_notificationsPlugin.initialize as dynamic)(settings);
+      // Note: plugin v22+ uses named parameter `settings`
+      await _notificationsPlugin.initialize(settings: settings);
     } catch (_) {
-      // fallback: nothing to do
+      // Fallback: notifications not available on this platform
     }
   }
 
@@ -90,14 +91,151 @@ class NotificationService {
 
     _notificationHistory.insert(0, notificationItem);
 
+    // Fire callback for UI overlay
+    if (onNewNotification != null) {
+      onNewNotification!(notificationItem);
+    }
+
+    // Show system notification if possible
+    try {
+      await _notificationsPlugin.show(
+        id: id,
+        title: title,
+        body: body,
+        notificationDetails: NotificationDetails(
+          android: AndroidNotificationDetails(
+            'taxi_emergency_channel',
+            'Taxi Emergency Notifications',
+            channelDescription: 'Emergency alerts and notifications',
+            importance: type == 'emergency'
+                ? Importance.high
+                : Importance.defaultImportance,
+            priority:
+                type == 'emergency' ? Priority.high : Priority.defaultPriority,
+          ),
+          iOS: const DarwinNotificationDetails(),
+        ),
+      );
+    } catch (_) {
+      debugPrint('Notify(id=$id): $title - $body');
+    }
+
     // Save to backend
     await _saveNotificationToBackend(notificationItem);
+  }
 
-    // The plugin's `show` signature has changed between releases. To avoid
-    // breakage during compilation, log the notification and skip calling
-    // into the native plugin here. Re-enable the plugin call if you adapt
-    // it to the installed plugin version.
-    debugPrint('Notify(id=$id): $title - $body');
+  /// Shows an in-app overlay dialog for emergency notifications
+  static void showEmergencyOverlay({
+    required String title,
+    required String body,
+    String? taxiId,
+    String? driverName,
+  }) {
+    // Use the global navigator key to show dialog from anywhere
+    final context = navigatorKey.currentContext;
+    if (context == null) {
+      debugPrint('No context available for overlay');
+      return;
+    }
+
+    // Play a sound/vibration pattern (best effort)
+    try {
+      _notificationsPlugin.show(
+        id: DateTime.now().millisecondsSinceEpoch % 100000,
+        title: title,
+        body: body,
+        notificationDetails: NotificationDetails(
+          android: AndroidNotificationDetails(
+            'taxi_emergency_channel',
+            'Taxi Emergency Notifications',
+            channelDescription: 'Emergency alerts and notifications',
+            importance: Importance.high,
+            priority: Priority.high,
+            playSound: true,
+            enableVibration: true,
+            vibrationPattern: Int64List.fromList([500, 500, 500, 500, 1000]),
+          ),
+          iOS: const DarwinNotificationDetails(
+            presentAlert: true,
+            presentBadge: true,
+            presentSound: true,
+          ),
+        ),
+      );
+    } catch (_) {
+      // ignore
+    }
+
+    // Show in-app emergency alert dialog (only from main thread)
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (navigatorKey.currentContext == null) return;
+      showDialog(
+        context: navigatorKey.currentContext!,
+        barrierDismissible: false,
+        builder: (ctx) => AlertDialog(
+          backgroundColor: Colors.red.shade900,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+            side: const BorderSide(color: Colors.yellow, width: 2),
+          ),
+          title: Row(
+            children: [
+              const Icon(Icons.warning, color: Colors.yellow, size: 32),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  title,
+                  style: const TextStyle(
+                    color: Colors.yellow,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 20,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                body,
+                style: const TextStyle(color: Colors.white, fontSize: 16),
+              ),
+              if (driverName != null || taxiId != null) ...[
+                const SizedBox(height: 12),
+                if (driverName != null)
+                  Text(
+                    'Driver: $driverName',
+                    style: const TextStyle(
+                      color: Colors.white70,
+                      fontSize: 14,
+                    ),
+                  ),
+                if (taxiId != null)
+                  Text(
+                    'Taxi: $taxiId',
+                    style: const TextStyle(
+                      color: Colors.white70,
+                      fontSize: 14,
+                    ),
+                  ),
+              ],
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text(
+                'ACKNOWLEDGE',
+                style: TextStyle(
+                    color: Colors.yellow, fontWeight: FontWeight.bold),
+              ),
+            ),
+          ],
+        ),
+      );
+    });
   }
 
   static Future<void> showIncomingAlert(String message) async {
@@ -134,14 +272,14 @@ class NotificationService {
       final userData = prefs.getString('user');
 
       if (token == null || userData == null) {
-        print('No auth token or user data found, skipping backend save');
+        debugPrint('No auth token or user data found, skipping backend save');
         return;
       }
 
       final user = jsonDecode(userData);
-      final taxiId = user['email']; // Using email as taxi ID for now
+      final taxiId = user['email'];
 
-      const baseUrl = 'http://10.95.105.200:3000';
+      const baseUrl = 'https://taxiapp-back.vercel.app';
 
       final response = await http.post(
         Uri.parse('$baseUrl/api/activities'),
@@ -158,12 +296,13 @@ class NotificationService {
       );
 
       if (response.statusCode == 200 || response.statusCode == 201) {
-        print('Notification saved to backend successfully');
+        debugPrint('Notification saved to backend successfully');
       } else {
-        print('Failed to save notification to backend: ${response.statusCode}');
+        debugPrint(
+            'Failed to save notification to backend: ${response.statusCode}');
       }
     } catch (e) {
-      print('Error saving notification to backend: $e');
+      debugPrint('Error saving notification to backend: $e');
     }
   }
 }

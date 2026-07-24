@@ -23,6 +23,19 @@ const storage = multer.diskStorage({
 });
 
 const upload = multer({ storage: storage });
+const verificationUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 1024 * 1024,
+    files: 4,
+  },
+  fileFilter: (req, file, cb) => {
+    if (['image/jpeg', 'image/png', 'image/webp'].includes(file.mimetype)) {
+      return cb(null, true);
+    }
+    cb(new Error('Verification documents must be JPG, PNG, or WebP images'));
+  },
+});
 
 const transporter = nodemailer.createTransport({
   host: process.env.SMTP_HOST || '',
@@ -279,10 +292,19 @@ router.post('/social-login', async (req, res) => {
 });
 
 // Register new user/driver
-router.post('/register', async (req, res) => {
+router.post(
+  '/register',
+  verificationUpload.fields([
+    { name: 'registrationDocument', maxCount: 1 },
+    { name: 'vehiclePhoto', maxCount: 1 },
+    { name: 'driverLicense', maxCount: 1 },
+    { name: 'nationalId', maxCount: 1 },
+  ]),
+  async (req, res) => {
   let connection;
   let userId;
   let driverId;
+  let verificationCreated = false;
   let taxiCreated = false;
 
   try {
@@ -306,10 +328,20 @@ router.post('/register', async (req, res) => {
     const normalizedLicensePlate = typeof licence === 'string' ? licence.trim() : '';
     const normalizedPhone = typeof phoneValue === 'string' ? phoneValue.trim() : null;
     const role = 'driver';
+    const registrationDocument = req.files?.registrationDocument?.[0];
+    const vehiclePhoto = req.files?.vehiclePhoto?.[0];
+    const driverLicense = req.files?.driverLicense?.[0];
+    const nationalId = req.files?.nationalId?.[0];
 
     if (!normalizedUsername || !normalizedEmail || !password || !normalizedLicensePlate) {
       return res.status(400).json({
         error: 'Name, email, password, and taxi registration number are required',
+      });
+    }
+
+    if (!registrationDocument || !vehiclePhoto) {
+      return res.status(400).json({
+        error: 'Registration certificate and vehicle photo are required for verification',
       });
     }
 
@@ -336,7 +368,7 @@ router.post('/register', async (req, res) => {
     const passwordHash = await bcrypt.hash(password, 10);
 
     const [result] = await connection.query(
-      'INSERT INTO users (username, email, password_hash, role, phone) VALUES (?, ?, ?, ?, ?)',
+      'INSERT INTO users (username, email, password_hash, role, phone, is_active) VALUES (?, ?, ?, ?, ?, false)',
       [normalizedUsername, normalizedEmail, passwordHash, role, normalizedPhone]
     );
 
@@ -348,6 +380,24 @@ router.post('/register', async (req, res) => {
       [normalizedUsername, normalizedEmail, normalizedLicensePlate, normalizedPhone, passwordHash]
     );
     driverId = driverResult.insertId;
+
+    await connection.query(
+      'INSERT INTO driver_verifications (user_id, driver_id, registration_document, registration_mime, vehicle_photo, vehicle_photo_mime, driver_license, driver_license_mime, national_id, national_id_mime, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [
+        userId,
+        driverId,
+        registrationDocument.buffer,
+        registrationDocument.mimetype,
+        vehiclePhoto.buffer,
+        vehiclePhoto.mimetype,
+        driverLicense?.buffer || null,
+        driverLicense?.mimetype || null,
+        nationalId?.buffer || null,
+        nationalId?.mimetype || null,
+        'pending',
+      ]
+    );
+    verificationCreated = true;
 
     await connection.query(
       'INSERT INTO taxis (taxi_id, lat, lng, is_online, vehicle_model, license_plate, driver_name, phone) VALUES (?, 0, 0, false, ?, ?, ?, ?)',
@@ -365,16 +415,20 @@ router.post('/register', async (req, res) => {
 
     res.status(201).json({
       success: true,
-      message: 'Driver and user account registered successfully',
+      message: 'Registration submitted. Your documents must be approved before you can log in.',
       user: userResponse,
       userId,
       driverId,
+      verificationStatus: 'pending',
     });
   } catch (error) {
     if (connection && userId) {
       try {
         if (taxiCreated) {
           await connection.query('DELETE FROM taxis WHERE taxi_id = ?', ['TX-' + userId.toString().padStart(4, '0')]);
+        }
+        if (verificationCreated) {
+          await connection.query('DELETE FROM driver_verifications WHERE user_id = ?', [userId]);
         }
         if (driverId) {
           await connection.query('DELETE FROM drivers WHERE driver_id = ?', [driverId]);
@@ -389,7 +443,8 @@ router.post('/register', async (req, res) => {
   } finally {
     connection?.release();
   }
-});
+  }
+);
 
 // Login user by email + password
 router.post('/login', async (req, res) => {
@@ -403,7 +458,7 @@ router.post('/login', async (req, res) => {
     }
 
     const [users] = await db.query(
-      'SELECT id, username, email, password_hash, role FROM users WHERE email = ?',
+      'SELECT id, username, email, password_hash, role, is_active FROM users WHERE email = ?',
       [normalizedEmail]
     );
 
@@ -417,6 +472,13 @@ router.post('/login', async (req, res) => {
     const isValidPassword = await bcrypt.compare(password, user.password_hash);
     if (!isValidPassword) {
       return res.status(401).json({ error: 'Invalid credentials' });
+    }
+
+    if (user.role === 'driver' && !user.is_active) {
+      return res.status(403).json({
+        error: 'Your account is awaiting document verification by an administrator.',
+        code: 'DRIVER_VERIFICATION_PENDING',
+      });
     }
 
     // Find the driver's taxi id, if available
@@ -560,6 +622,93 @@ router.put('/password', authenticateToken, async (req, res) => {
     res.json({ success: true, message: 'Password changed successfully' });
   } catch (error) {
     console.error('Password change error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ============================================================
+// User Settings Endpoints
+// ============================================================
+
+// GET /api/auth/settings - Get user settings (theme, language, etc.)
+router.get('/settings', authenticateToken, async (req, res) => {
+  try {
+    // Check if app_settings table exists, if not create it
+    try {
+      await db.query(`
+        CREATE TABLE IF NOT EXISTS app_settings (
+          id INT NOT NULL AUTO_INCREMENT,
+          user_id INT NOT NULL,
+          setting_key VARCHAR(100) NOT NULL,
+          setting_value TEXT,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+          PRIMARY KEY (id),
+          UNIQUE KEY unique_user_setting (user_id, setting_key),
+          KEY idx_user_settings (user_id)
+        )
+      `);
+    } catch (e) {
+      // Table may already exist
+    }
+
+    const [settings] = await db.query(
+      'SELECT setting_key, setting_value FROM app_settings WHERE user_id = ?',
+      [req.user.id]
+    );
+
+    const settingsMap = {};
+    for (const row of settings) {
+      settingsMap[row.setting_key] = row.setting_value;
+    }
+
+    res.json({ success: true, settings: settingsMap });
+  } catch (error) {
+    console.error('Settings fetch error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// PUT /api/auth/settings - Update user settings
+router.put('/settings', authenticateToken, async (req, res) => {
+  try {
+    const { settings } = req.body;
+    if (!settings || typeof settings !== 'object') {
+      return res.status(400).json({ error: 'Settings object is required' });
+    }
+
+    // Ensure table exists
+    try {
+      await db.query(`
+        CREATE TABLE IF NOT EXISTS app_settings (
+          id INT NOT NULL AUTO_INCREMENT,
+          user_id INT NOT NULL,
+          setting_key VARCHAR(100) NOT NULL,
+          setting_value TEXT,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+          PRIMARY KEY (id),
+          UNIQUE KEY unique_user_setting (user_id, setting_key),
+          KEY idx_user_settings (user_id)
+        )
+      `);
+    } catch (e) {
+      // Table may already exist
+    }
+
+    // Upsert each setting
+    for (const [key, value] of Object.entries(settings)) {
+      await db.query(
+        `INSERT INTO app_settings (user_id, setting_key, setting_value)
+         VALUES (?, ?, ?)
+         ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value), updated_at = CURRENT_TIMESTAMP`,
+        [req.user.id, key, String(value)]
+      );
+    }
+
+    res.json({ success: true, message: 'Settings updated successfully' });
+  } catch (error) {
+    console.error('Settings update error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

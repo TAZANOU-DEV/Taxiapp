@@ -14,6 +14,7 @@ import 'about_page.dart';
 import 'settings_page.dart';
 import 'notification.dart';
 import 'chat_page.dart';
+import 'emergency_navigation_page.dart';
 import 'notification_page.dart';
 
 class HomePage extends StatefulWidget {
@@ -62,7 +63,7 @@ class _HomePageState extends State<HomePage> {
   ];
 
   String get backendBaseUrl {
-    return 'http://10.95.105.200:3000';
+    return 'https://taxiapp-back.vercel.app';
   }
 
   Future<void> sendEmergency() async {
@@ -736,6 +737,35 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
+  void _openEmergencyNavigation() {
+    if (emergencyLocation == null || currentPosition == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Current and emergency locations are required.'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => EmergencyNavigationPage(
+          responderLocation:
+              LatLng(currentPosition!.latitude, currentPosition!.longitude),
+          emergencyLocation: emergencyLocation!,
+          requesterName: emergencyDetails?['driverName']?.toString() ??
+              activeEmergencyRequesterName ??
+              'Driver in danger',
+          taxiId: emergencyDetails?['taxiNumber']?.toString() ??
+              activeEmergencyRequesterId ??
+              'Unknown taxi',
+          message: emergencyDetails?['message']?.toString(),
+        ),
+      ),
+    );
+  }
+
   @override
   void initState() {
     super.initState();
@@ -1159,7 +1189,10 @@ class _HomePageState extends State<HomePage> {
   Widget _helpOnWayButton() {
     return Center(
       child: InkWell(
-        onTap: sendHelpOnWay,
+        onTap: () {
+          sendHelpOnWay();
+          _openEmergencyNavigation();
+        },
         borderRadius: BorderRadius.circular(16),
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 14),
@@ -1304,6 +1337,20 @@ class _HomePageState extends State<HomePage> {
             Text(
               'Tap "I am coming" to respond and notify the requester.',
               style: const TextStyle(color: Colors.white70),
+            ),
+
+          if (!isRequester && emergencyLocation != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 12),
+              child: OutlinedButton.icon(
+                onPressed: _openEmergencyNavigation,
+                icon: const Icon(Icons.map),
+                label: const Text('View emergency location'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Colors.white,
+                  side: const BorderSide(color: Colors.white70),
+                ),
+              ),
             ),
 
           if (isRequester)

@@ -1,9 +1,7 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
-import 'login_page.dart';
 import 'home_page.dart';
 
 class RegisterPage extends StatefulWidget {
@@ -15,7 +13,7 @@ class RegisterPage extends StatefulWidget {
 
 class _RegisterPageState extends State<RegisterPage> {
   String get baseUrl {
-    return 'http://10.95.105.200:3000';
+    return 'https://taxiapp-back.vercel.app';
   }
 
   final TextEditingController _nameController = TextEditingController();
@@ -140,22 +138,25 @@ class _RegisterPageState extends State<RegisterPage> {
           await prefs.setString('user_name', name);
           await prefs.setString('user_email', email);
           await prefs.setString('taxi_id', savedTaxiId);
+          await prefs.setString('user_phone', phone);
+          await prefs.setString('user_matricule', matricule);
+          await prefs.setString('user_role', 'driver');
           if (savedUserId != null) {
             await prefs.setInt('user_id', savedUserId);
           }
 
-          _showSuccess('Registration successful! Welcome.');
-          Future.delayed(const Duration(seconds: 2), () {
-            Navigator.pushReplacement(
-              context,
-              MaterialPageRoute(
-                builder: (context) => HomePage(
-                  userName: name,
-                  taxiId: savedTaxiId,
-                ),
-              ),
-            );
-          });
+          // If a token was returned, save it for API calls
+          if (data['token'] != null) {
+            await prefs.setString('token', data['token'].toString());
+          }
+
+          // Save full user object
+          if (user != null) {
+            await prefs.setString('user', jsonEncode(user));
+          }
+
+          _showSuccess(
+              'Registration submitted! Your documents must be approved before you can log in.');
         } else {
           _showError(data['error'] ?? 'Registration failed');
         }

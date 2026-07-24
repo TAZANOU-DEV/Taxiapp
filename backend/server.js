@@ -27,6 +27,31 @@ const migrateAuthSchema = async () => {
       }
     }
     console.log('✅ Auth schema migration checked');
+    await db.query(
+      'CREATE TABLE IF NOT EXISTS driver_verifications (' +
+        'verification_id INT NOT NULL AUTO_INCREMENT,' +
+        'user_id INT NOT NULL,' +
+        'driver_id INT NOT NULL,' +
+        'registration_document LONGBLOB NOT NULL,' +
+        'registration_mime VARCHAR(100) NOT NULL,' +
+        'vehicle_photo LONGBLOB NOT NULL,' +
+        'vehicle_photo_mime VARCHAR(100) NOT NULL,' +
+        'driver_license LONGBLOB DEFAULT NULL,' +
+        'driver_license_mime VARCHAR(100) DEFAULT NULL,' +
+        'national_id LONGBLOB DEFAULT NULL,' +
+        'national_id_mime VARCHAR(100) DEFAULT NULL,' +
+        "status VARCHAR(20) NOT NULL DEFAULT 'pending'," +
+        'review_notes TEXT DEFAULT NULL,' +
+        'reviewed_by INT DEFAULT NULL,' +
+        'reviewed_at DATETIME DEFAULT NULL,' +
+        'created_at DATETIME DEFAULT CURRENT_TIMESTAMP,' +
+        'updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,' +
+        'PRIMARY KEY (verification_id),' +
+        'UNIQUE KEY unique_verification_user (user_id),' +
+        'UNIQUE KEY unique_verification_driver (driver_id),' +
+        'KEY idx_verification_status (status)' +
+      ')'
+    );
   } catch (err) {
     console.error('❌ Migration failed (non-blocking):', err.message);
   }

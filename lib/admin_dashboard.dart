@@ -18,7 +18,7 @@ class AdminDashboard extends StatefulWidget {
 
 class _AdminDashboardState extends State<AdminDashboard> {
   String get baseUrl {
-    return 'http://10.95.105.200:3000';
+    return 'https://taxiapp-back.vercel.app';
   }
 
   _AdminTab _selectedTab = _AdminTab.overview;

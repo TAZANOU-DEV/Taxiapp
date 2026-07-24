@@ -23,7 +23,7 @@ class LoginPage extends StatefulWidget {
 
 class _LoginPageState extends State<LoginPage> {
   String get baseUrl {
-    return 'http://10.95.105.200:3000';
+    return 'https://taxiapp-back.vercel.app';
   }
 
   final TextEditingController _emailController = TextEditingController();

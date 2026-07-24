@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
@@ -21,7 +20,7 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
   bool _isResetting = false;
 
   String get baseUrl {
-    return 'http://10.95.105.200:3000';
+    return 'https://taxiapp-back.vercel.app';
   }
 
   Future<void> _sendResetToken() async {

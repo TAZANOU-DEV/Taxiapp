@@ -24,6 +24,9 @@ router.get(
         u.is_active,
         u.created_at as user_created_at,
         u.updated_at as user_updated_at,
+        v.status as verification_status,
+        v.review_notes as verification_review_notes,
+        v.created_at as verification_submitted_at,
         t.taxi_id,
         t.vehicle_model,
         t.license_plate,
@@ -35,6 +38,7 @@ router.get(
         t.updated_at as taxi_updated_at
       FROM users u
       LEFT JOIN taxis t ON t.driver_name = u.username
+      LEFT JOIN driver_verifications v ON v.user_id = u.id
       WHERE u.role = 'driver'
       ORDER BY u.id DESC
       LIMIT ? OFFSET ?
@@ -65,6 +69,9 @@ router.get(
         u.is_active,
         u.created_at as user_created_at,
         u.updated_at as user_updated_at,
+        v.status as verification_status,
+        v.review_notes as verification_review_notes,
+        v.created_at as verification_submitted_at,
         t.taxi_id,
         t.vehicle_model,
         t.license_plate,
@@ -76,6 +83,7 @@ router.get(
         t.updated_at as taxi_updated_at
       FROM users u
       LEFT JOIN taxis t ON t.driver_name = u.username
+      LEFT JOIN driver_verifications v ON v.user_id = u.id
       WHERE u.id = ? AND u.role = 'driver'
       LIMIT 1
       `,
