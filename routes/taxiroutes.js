@@ -1,0 +1,382 @@
+
+const express = require('express');
+const router = express.Router();
+const db = require('../db');
+
+module.exports = (io) => {
+const asyncHandler = (fn) => (req, res, next) => {
+  Promise.resolve(fn(req, res, next)).catch(next);
+};
+
+// 📍 Share Location
+router.post('/location', asyncHandler(async (req, res) => {
+  const { taxiId, lat, lng } = req.body;
+
+  if (!taxiId || !lat || !lng) {
+    return res.status(400).json({ error: 'Missing required fields: taxiId, lat, lng' });
+  }
+
+  const sql = `
+    INSERT INTO taxis (taxi_id, lat, lng, is_online)
+    VALUES (?, ?, ?, true)
+    ON DUPLICATE KEY UPDATE
+      lat = VALUES(lat),
+      lng = VALUES(lng),
+      is_online = true,
+      updated_at = CURRENT_TIMESTAMP
+  `;
+
+  await db.query(sql, [taxiId, lat, lng]);
+
+  // Mirror location into legacy `location_history` table when possible
+  try {
+    const [driverRows] = await db.query(
+      `
+      SELECT d.driver_id
+      FROM drivers d
+      JOIN taxis t ON d.taxi_matricule = t.license_plate
+      WHERE t.taxi_id = ?
+      LIMIT 1
+      `,
+      [taxiId]
+    );
+
+    if (driverRows && driverRows.length > 0) {
+      await db.query(
+        'INSERT INTO location_history (driver_id, latitude, longitude) VALUES (?, ?, ?)',
+        [driverRows[0].driver_id, lat, lng]
+      );
+    }
+  } catch (e) {
+    // Ignore if `location_history` table doesn't exist.
+  }
+
+  // Mirror location into legacy `drivers` table when possible (drivers.taxi_matricule matches taxis.license_plate)
+  try {
+    await db.query(
+      `
+      UPDATE drivers d
+      JOIN taxis t ON d.taxi_matricule = t.license_plate
+      SET
+        d.last_latitude = ?,
+        d.last_longitude = ?,
+        d.is_online = 1,
+        d.updated_at = CURRENT_TIMESTAMP
+      WHERE t.taxi_id = ?
+      `,
+      [lat, lng, taxiId]
+    );
+  } catch (e) {
+    // Ignore if `drivers` table doesn't exist.
+  }
+
+  // Log activity
+  await db.query(
+    'INSERT INTO activities (taxi_id, title, type) VALUES (?, ?, ?)',
+    [taxiId, '📍 Location shared', 'location']
+  );
+
+  res.json({ success: true, message: 'Location shared successfully' });
+}));
+
+// 🚨 Emergency Alert
+router.post('/emergency', asyncHandler(async (req, res) => {
+  const { taxiId, lat, lng, message = 'Emergency alert sent' } = req.body;
+
+  if (!taxiId) {
+    return res.status(400).json({ error: 'Missing required field: taxiId' });
+  }
+
+  // Get taxi details (with try/catch for resilience)
+  let taxiInfo = {};
+  try {
+    const [taxiResults] = await db.query(
+      'SELECT license_plate, driver_name, phone FROM taxis WHERE taxi_id = ?',
+      [taxiId]
+    );
+    taxiInfo = taxiResults[0] || {};
+  } catch (e) {
+    console.warn('Taxi lookup failed (non-blocking):', e.message || e);
+  }
+
+  let driverId = null;
+  try {
+    const [driverRows] = await db.query(
+      `SELECT d.driver_id
+       FROM drivers d
+       JOIN taxis t ON d.taxi_matricule = t.license_plate
+       WHERE t.taxi_id = ?
+       LIMIT 1`,
+      [taxiId]
+    );
+    if (driverRows && driverRows.length > 0) {
+      driverId = driverRows[0].driver_id;
+    }
+  } catch (e) {
+    console.warn('Legacy driver lookup failed:', e.message || e);
+  }
+
+  try {
+    await db.query(
+      'INSERT INTO emergency_alerts (taxi_id, driver_id, latitude, longitude, status, message) VALUES (?, ?, ?, ?, ?, ?)',
+      [taxiId, driverId, lat || null, lng || null, 'pending', message]
+    );
+  } catch (e) {
+    console.warn('Failed to save emergency alert to emergency_alerts table:', e.message || e);
+  }
+
+  // Log activity (non-blocking)
+  try {
+    await db.query(
+      'INSERT INTO activities (taxi_id, title, description, type) VALUES (?, ?, ?, ?)',
+      [taxiId, '🚨 Emergency alert sent', message, 'emergency']
+    );
+  } catch (e) {
+    console.warn('Failed to log activity:', e.message || e);
+  }
+
+  // Broadcast to all connected taxis via Socket.io
+  try {
+    io.emit('emergencyAlert', {
+      taxiId,
+      taxiNumber: taxiInfo.license_plate || taxiId,
+      driverName: taxiInfo.driver_name || 'Unknown',
+      phone: taxiInfo.phone || '',
+      lat: lat || null,
+      lng: lng || null,
+      message,
+      timestamp: new Date().toISOString()
+    });
+    console.log(`🚨 Emergency broadcast sent for taxi ${taxiId}`);
+  } catch (e) {
+    console.error('Socket broadcast failed:', e.message || e);
+  }
+
+  // Send SMS notification via external SMS API if configured
+  const smsApiKey = process.env.SMS_API_KEY;
+  const smsApiUrl = process.env.SMS_API_URL;
+  if (smsApiKey && smsApiUrl) {
+    try {
+      const axios = require('axios');
+      await axios.post(smsApiUrl, {
+        apiKey: smsApiKey,
+        to: process.env.EMERGENCY_CONTACT_NUMBER || '',
+        message: `🚨 EMERGENCY: Taxi ${taxiInfo.license_plate || taxiId} (${taxiInfo.driver_name || 'Unknown'}) needs help at https://maps.google.com/?q=${lat || ''},${lng || ''}. ${message}`,
+      });
+      console.log(`📱 SMS notification sent for taxi ${taxiId}`);
+    } catch (e) {
+      console.warn('SMS notification failed (non-blocking):', e.message || e);
+    }
+  }
+
+  // Send email notification to police/emergency contacts if configured
+  if (process.env.EMERGENCY_EMAIL_TO && process.env.SMTP_HOST) {
+    try {
+      const nodemailer = require('nodemailer');
+      const transporter = nodemailer.createTransport({
+        host: process.env.SMTP_HOST,
+        port: parseInt(process.env.SMTP_PORT || '587', 10),
+        secure: process.env.SMTP_SECURE === 'true',
+        auth: process.env.SMTP_USER && process.env.SMTP_PASS ? {
+          user: process.env.SMTP_USER,
+          pass: process.env.SMTP_PASS
+        } : undefined
+      });
+      await transporter.sendMail({
+        from: process.env.SMTP_USER || 'no-reply@taxiapp.com',
+        to: process.env.EMERGENCY_EMAIL_TO,
+        subject: `🚨 EMERGENCY ALERT - Taxi ${taxiInfo.license_plate || taxiId}`,
+        text: `EMERGENCY ALERT\n\nTaxi: ${taxiInfo.license_plate || taxiId}\nDriver: ${taxiInfo.driver_name || 'Unknown'}\nPhone: ${taxiInfo.phone || 'N/A'}\nLocation: https://maps.google.com/?q=${lat || ''},${lng || ''}\nMessage: ${message}\n\nTimestamp: ${new Date().toISOString()}`,
+      });
+      console.log(`📧 Email notification sent for taxi ${taxiId}`);
+    } catch (e) {
+      console.warn('Email notification failed (non-blocking):', e.message || e);
+    }
+  }
+
+  // Send Push Notification to all connected admins via socket
+  try {
+    io.emit('admin_notification', {
+      type: 'emergency',
+      title: '🚨 Emergency Alert',
+      body: `Taxi ${taxiInfo.license_plate || taxiId} (${taxiInfo.driver_name || 'Unknown'}) needs immediate assistance!`,
+      taxiId,
+      lat: lat || null,
+      lng: lng || null,
+      timestamp: new Date().toISOString()
+    });
+  } catch (e) {
+    console.warn('Admin push notification failed:', e.message || e);
+  }
+
+  res.json({ success: true, message: 'Emergency alert sent to all taxis and emergency contacts' });
+}));
+
+// 📜 Get Activity History
+router.get('/activities/:taxiId', asyncHandler(async (req, res) => {
+  const taxiId = req.params.taxiId;
+  const limit = parseInt(req.query.limit) || 50;
+  const offset = parseInt(req.query.offset) || 0;
+
+  const [results] = await db.query(
+    'SELECT * FROM activities WHERE taxi_id = ? ORDER BY created_at DESC LIMIT ? OFFSET ?',
+    [taxiId, limit, offset]
+  );
+
+  res.json(results || []);
+}));
+
+// 🚕 Get Nearby Taxis (within radius)
+router.get('/nearby', asyncHandler(async (req, res) => {
+  const { lat, lng, radius = 5 } = req.query;
+
+  if (!lat || !lng) {
+    return res.status(400).json({ error: 'Missing required query parameters: lat, lng' });
+  }
+
+  const latNum = parseFloat(lat);
+  const lngNum = parseFloat(lng);
+  const radiusNum = parseFloat(radius);
+
+  // Haversine formula for distance calculation
+  const sql = `
+    SELECT
+      taxi_id,
+      lat,
+      lng,
+      is_online,
+      vehicle_model,
+      license_plate,
+      driver_name,
+      phone,
+      created_at,
+      updated_at,
+      (
+        6371 * acos(
+          cos(radians(?)) * cos(radians(lat)) * cos(radians(lng) - radians(?)) +
+          sin(radians(?)) * sin(radians(lat))
+        )
+      ) AS distance_km
+    FROM taxis
+    WHERE is_online = true
+    HAVING distance_km <= ?
+    ORDER BY distance_km ASC
+  `;
+
+  const [results] = await db.query(sql, [latNum, lngNum, latNum, radiusNum]);
+
+  res.json(results || []);
+}));
+
+// 📋 Create Taxi Order
+router.post('/order', asyncHandler(async (req, res) => {
+  const { from_taxi_id, to_taxi_id, pickup_lat, pickup_lng, dropoff_lat, dropoff_lng, reason = 'assistance' } = req.body;
+
+  if (!from_taxi_id || !to_taxi_id) {
+    return res.status(400).json({ error: 'Missing required fields: from_taxi_id, to_taxi_id' });
+  }
+
+  const sql = `
+    INSERT INTO taxi_orders (from_taxi_id, to_taxi_id, status, pickup_lat, pickup_lng, dropoff_lat, dropoff_lng, reason)
+    VALUES (?, ?, 'requested', ?, ?, ?, ?, ?)
+  `;
+
+  const [result] = await db.query(sql, [from_taxi_id, to_taxi_id, pickup_lat, pickup_lng, dropoff_lat, dropoff_lng, reason]);
+
+  res.json({
+    success: true,
+    orderId: result.insertId,
+    message: 'Order created successfully'
+  });
+}));
+
+// 📬 Get Active Orders for Taxi
+router.get('/orders/:taxiId', asyncHandler(async (req, res) => {
+  const taxiId = req.params.taxiId;
+  const status = req.query.status; // Optional filter
+
+  let sql = `
+    SELECT * FROM taxi_orders
+    WHERE (from_taxi_id = ? OR to_taxi_id = ?)
+  `;
+  let params = [taxiId, taxiId];
+
+  if (status) {
+    sql += ' AND status = ?';
+    params.push(status);
+  }
+
+  sql += ' ORDER BY created_at DESC';
+
+  const [results] = await db.query(sql, params);
+
+  res.json(results || []);
+}));
+
+// ✅ Update Order Status
+router.put('/order/:orderId', asyncHandler(async (req, res) => {
+  const { orderId } = req.params;
+  const { status, fare } = req.body;
+
+  if (!status) {
+    return res.status(400).json({ error: 'Missing required field: status' });
+  }
+
+  const validStatuses = ['requested', 'accepted', 'on_way', 'arrived', 'completed', 'cancelled'];
+  if (!validStatuses.includes(status)) {
+    return res.status(400).json({ error: 'Invalid status value' });
+  }
+
+  let sql = 'UPDATE taxi_orders SET status = ?, updated_at = CURRENT_TIMESTAMP';
+  let params = [status];
+
+  if (fare !== undefined) {
+    sql += ', fare = ?';
+    params.push(fare);
+  }
+
+  sql += ' WHERE id = ?';
+  params.push(orderId);
+
+  const [result] = await db.query(sql, params);
+
+  if (result.affectedRows === 0) {
+    return res.status(404).json({ error: 'Order not found' });
+  }
+
+  res.json({ success: true, message: 'Order updated successfully' });
+}));
+
+// 👤 Get Taxi Profile
+router.get('/profile/:taxiId', asyncHandler(async (req, res) => {
+  const taxiId = req.params.taxiId;
+
+  const [results] = await db.query(
+    'SELECT taxi_id, lat, lng, is_online, vehicle_model, license_plate, driver_name, phone, created_at, updated_at FROM taxis WHERE taxi_id = ?',
+    [taxiId]
+  );
+
+  if (results.length === 0) {
+    return res.status(404).json({ error: 'Taxi not found' });
+  }
+
+  res.json(results[0]);
+}));
+
+// 📊 Get Dashboard Stats
+router.get('/stats', asyncHandler(async (req, res) => {
+  const [onlineTaxis] = await db.query('SELECT COUNT(*) as count FROM taxis WHERE is_online = true');
+  const [totalOrders] = await db.query('SELECT COUNT(*) as count FROM taxi_orders');
+  const [activeOrders] = await db.query("SELECT COUNT(*) as count FROM taxi_orders WHERE status IN ('requested', 'accepted', 'on_way')");
+  const [emergencyCount] = await db.query("SELECT COUNT(*) as count FROM activities WHERE type = 'emergency' AND DATE(created_at) = CURDATE()");
+
+  res.json({
+    onlineTaxis: onlineTaxis[0].count,
+    totalOrders: totalOrders[0].count,
+    activeOrders: activeOrders[0].count,
+    todayEmergencies: emergencyCount[0].count
+  });
+}));
+
+  return router;
+};
