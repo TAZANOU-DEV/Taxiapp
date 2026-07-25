@@ -5,7 +5,6 @@ import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'dart:math' as math;
 import 'package:url_launcher/url_launcher.dart';
-import 'login_page.dart';
 
 enum _AdminTab { overview, drivers, management }
 
@@ -400,7 +399,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (context) {
-        return DrvierDetailSheet(
+        return DriverDetailSheet(
           driver: driver,
           onStatusToggle: (bool toOnline) {
             if (driver['taxi_id'] != null) {
@@ -853,7 +852,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
             children: [
               Expanded(
                 child: DropdownButtonFormField<String>(
-                  value: _emergencyStatusFilter,
+                  initialValue: _emergencyStatusFilter,
                   decoration: const InputDecoration(
                     labelText: 'Filter status',
                     border: OutlineInputBorder(),
@@ -939,7 +938,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
               children: [
                 Expanded(
                   child: DropdownButtonFormField<String>(
-                    value: currentStatus,
+                    initialValue: currentStatus,
                     decoration: const InputDecoration(
                       labelText: 'Status',
                       border: OutlineInputBorder(),
@@ -1605,7 +1604,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                     ],
                   ),
                 );
-              }).toList(),
+              }),
           ],
         ),
       ),
@@ -1655,7 +1654,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                     ],
                   ),
                 );
-              }).toList(),
+              }),
           ],
         ),
       ),
@@ -2013,13 +2012,13 @@ class _PieChartPainter extends CustomPainter {
   }
 }
 
-class DrvierDetailSheet extends StatelessWidget {
+class DriverDetailSheet extends StatelessWidget {
   final Map<String, dynamic> driver;
   final void Function(bool toOnline) onStatusToggle;
   final void Function(String? phone)? onCall;
   final void Function(String? phone)? onWhatsApp;
 
-  const DrvierDetailSheet({
+  const DriverDetailSheet({
     required this.driver,
     required this.onStatusToggle,
     this.onCall,

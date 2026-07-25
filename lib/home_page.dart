@@ -83,14 +83,23 @@ class _HomePageState extends State<HomePage> {
         return;
       }
 
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString('token');
+
       final response = await http.post(
         Uri.parse('$backendBaseUrl/api/taxi/emergency'),
-        headers: {'Content-Type': 'application/json'},
+        headers: {
+          'Content-Type': 'application/json',
+          if (token != null) 'Authorization': 'Bearer $token',
+        },
         body: jsonEncode({
           'taxiId': taxId,
           'lat': currentPosition?.latitude,
           'lng': currentPosition?.longitude,
-          'message': 'Emergency alert from taxi $taxId'
+          'message': 'Emergency alert from taxi $taxId',
+          'taxiNumber': taxId,
+          'driverName': userName,
+          'email': userEmail,
         }),
       );
 
@@ -506,6 +515,8 @@ class _HomePageState extends State<HomePage> {
             'taxiNumber': data['taxiNumber'] ?? incomingTaxiLabel,
             'driverName': data['driverName'] ?? 'Unknown',
             'email': data['email'] ?? '',
+            'taxiMatricule': data['taxiMatricule'] ?? '',
+            'pictureUrl': data['pictureUrl'] ?? '',
             'message': data['message'] ?? '',
           };
 
@@ -1323,7 +1334,7 @@ class _HomePageState extends State<HomePage> {
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          'License: ${emergencyDetails!['license'] ?? '-'}',
+                          'Matricule: ${emergencyDetails!['taxiMatricule'] ?? '-'}',
                           style: const TextStyle(color: Colors.white70),
                         ),
                       ],

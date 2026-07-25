@@ -1,11 +1,11 @@
-# Task: Fix Text Color to Black on Yellow Background Pages
+# Implementation Plan
 
-## Steps
-- [x] 1. Analyze the issue: White text on yellow background due to dark theme default
-- [x] 2. Get user confirmation on the plan
+## Goal: When a taxi presses emergency, notify all taxis with driver details (name, email, taxi matricule, picture)
 
-## Editing Phase
-- [x] 3. Fix `lib/login_page.dart` - Added `color: Colors.black` to: "Taximan Login", "Driver Login", "Admin Login", "Remember me", "Or continue with", "Don't have an account?"
-- [x] 4. Fix `lib/register_page.dart` - Added `color: Colors.black` to: "Taximan Registration", "Already have an account?"
-- [ ] 5. Commit changes and push to repository
+### Steps:
+- [x] 1. Create TODO.md
+- [ ] 2. Edit `backend/routes/taxiroutes.js` - Enhance HTTP emergency POST route to fetch & broadcast full driver info (email, taxi_matricule, profile_image)
+- [ ] 3. Edit `backend/server.js` - Enhance socket `emergency` handler to query DB for full driver details before broadcasting
+- [ ] 4. Edit `lib/home_page.dart` - Update emergency UI to display driver picture, name, email, taxi matricule
+- [ ] 5. Restart backend server
 

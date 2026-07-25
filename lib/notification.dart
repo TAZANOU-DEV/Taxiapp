@@ -130,6 +130,9 @@ class NotificationService {
     required String body,
     String? taxiId,
     String? driverName,
+    String? email,
+    String? taxiMatricule,
+    String? pictureUrl,
   }) {
     // Use the global navigator key to show dialog from anywhere
     final context = navigatorKey.currentContext;
@@ -202,25 +205,82 @@ class NotificationService {
                 body,
                 style: const TextStyle(color: Colors.white, fontSize: 16),
               ),
-              if (driverName != null || taxiId != null) ...[
-                const SizedBox(height: 12),
-                if (driverName != null)
-                  Text(
-                    'Driver: $driverName',
-                    style: const TextStyle(
-                      color: Colors.white70,
-                      fontSize: 14,
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  CircleAvatar(
+                    radius: 28,
+                    backgroundColor: Colors.yellow,
+                    child: (pictureUrl != null && pictureUrl.isNotEmpty)
+                        ? ClipOval(
+                            child: Image.network(
+                              pictureUrl,
+                              width: 52,
+                              height: 52,
+                              fit: BoxFit.cover,
+                              errorBuilder: (_, __, ___) => const Icon(
+                                Icons.person,
+                                color: Colors.black,
+                                size: 32,
+                              ),
+                            ),
+                          )
+                        : Text(
+                            (driverName ?? 'U')
+                                .toString()
+                                .split(' ')
+                                .map((s) => s.isNotEmpty ? s[0] : '')
+                                .take(2)
+                                .join(),
+                            style: const TextStyle(
+                                color: Colors.black,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 20),
+                          ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (driverName != null)
+                          Text(
+                            'Driver: $driverName',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 14,
+                            ),
+                          ),
+                        if (taxiId != null)
+                          Text(
+                            'Taxi ID: $taxiId',
+                            style: const TextStyle(
+                              color: Colors.white70,
+                              fontSize: 14,
+                            ),
+                          ),
+                        if (email != null && email.isNotEmpty)
+                          Text(
+                            'Email: $email',
+                            style: const TextStyle(
+                              color: Colors.white70,
+                              fontSize: 14,
+                            ),
+                          ),
+                        if (taxiMatricule != null && taxiMatricule.isNotEmpty)
+                          Text(
+                            'Matricule: $taxiMatricule',
+                            style: const TextStyle(
+                              color: Colors.white70,
+                              fontSize: 14,
+                            ),
+                          ),
+                      ],
                     ),
                   ),
-                if (taxiId != null)
-                  Text(
-                    'Taxi: $taxiId',
-                    style: const TextStyle(
-                      color: Colors.white70,
-                      fontSize: 14,
-                    ),
-                  ),
-              ],
+                ],
+              ),
             ],
           ),
           actions: [

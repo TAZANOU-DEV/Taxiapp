@@ -338,6 +338,49 @@ io.on('connection', (socket) => {
         email,
       } = data;
 
+      // Fetch full driver info from database for enriching the broadcast
+      let taxiInfo = {};
+      let driverInfo = {};
+      let profileImageUrl = '';
+
+      try {
+        const [taxiResults] = await db.query(
+          'SELECT license_plate, driver_name, phone FROM taxis WHERE taxi_id = ?',
+          [taxiId]
+        );
+        taxiInfo = taxiResults[0] || {};
+      } catch (e) {
+        console.warn('Taxi lookup failed (non-blocking):', e.message || e);
+      }
+
+      try {
+        const [driverResults] = await db.query(
+          `SELECT d.email, d.taxi_matricule
+           FROM drivers d
+           JOIN taxis t ON d.taxi_matricule = t.license_plate
+           WHERE t.taxi_id = ?
+           LIMIT 1`,
+          [taxiId]
+        );
+        if (driverResults && driverResults.length > 0) {
+          driverInfo = driverResults[0];
+        }
+      } catch (e) {
+        console.warn('Driver info lookup failed (non-blocking):', e.message || e);
+      }
+
+      try {
+        const [userResults] = await db.query(
+          `SELECT profile_image FROM users WHERE username = ? OR email = ? LIMIT 1`,
+          [taxiInfo.driver_name || driverName || '', driverInfo.email || email || '']
+        );
+        if (userResults && userResults.length > 0 && userResults[0].profile_image) {
+          profileImageUrl = userResults[0].profile_image;
+        }
+      } catch (e) {
+        console.warn('User profile image lookup failed (non-blocking):', e.message || e);
+      }
+
       // Log emergency in database
       await db.query(`
         INSERT INTO activities (taxi_id, title, description, type)
@@ -346,9 +389,12 @@ io.on('connection', (socket) => {
 
       io.emit('emergencyAlert', {
         taxiId,
-        taxiNumber: taxiNumber || taxiId,
-        driverName: driverName || 'Unknown',
-        email: email || null,
+        taxiNumber: taxiInfo.license_plate || taxiNumber || taxiId,
+        driverName: taxiInfo.driver_name || driverName || 'Unknown',
+        phone: taxiInfo.phone || '',
+        email: driverInfo.email || email || '',
+        taxiMatricule: driverInfo.taxi_matricule || taxiInfo.license_plate || '',
+        pictureUrl: profileImageUrl || '',
         lat,
         lng,
         message,

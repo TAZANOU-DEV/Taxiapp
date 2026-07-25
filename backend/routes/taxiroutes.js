@@ -99,6 +99,38 @@ router.post('/emergency', asyncHandler(async (req, res) => {
     console.warn('Taxi lookup failed (non-blocking):', e.message || e);
   }
 
+  // Get driver email and taxi_matricule from drivers table
+  let driverInfo = {};
+  try {
+    const [driverResults] = await db.query(
+      `SELECT d.email, d.taxi_matricule
+       FROM drivers d
+       JOIN taxis t ON d.taxi_matricule = t.license_plate
+       WHERE t.taxi_id = ?
+       LIMIT 1`,
+      [taxiId]
+    );
+    if (driverResults && driverResults.length > 0) {
+      driverInfo = driverResults[0];
+    }
+  } catch (e) {
+    console.warn('Driver info lookup failed (non-blocking):', e.message || e);
+  }
+
+  // Get profile picture from users table via driver_name or email
+  let profileImageUrl = '';
+  try {
+    const [userResults] = await db.query(
+      `SELECT profile_image FROM users WHERE username = ? OR email = ? LIMIT 1`,
+      [taxiInfo.driver_name || '', driverInfo.email || '']
+    );
+    if (userResults && userResults.length > 0 && userResults[0].profile_image) {
+      profileImageUrl = userResults[0].profile_image;
+    }
+  } catch (e) {
+    console.warn('User profile image lookup failed (non-blocking):', e.message || e);
+  }
+
   let driverId = null;
   try {
     const [driverRows] = await db.query(
@@ -142,6 +174,9 @@ router.post('/emergency', asyncHandler(async (req, res) => {
       taxiNumber: taxiInfo.license_plate || taxiId,
       driverName: taxiInfo.driver_name || 'Unknown',
       phone: taxiInfo.phone || '',
+      email: driverInfo.email || '',
+      taxiMatricule: driverInfo.taxi_matricule || taxiInfo.license_plate || '',
+      pictureUrl: profileImageUrl || '',
       lat: lat || null,
       lng: lng || null,
       message,

@@ -104,6 +104,16 @@ class SocketService {
         body: alertMessage,
         type: 'emergency',
       );
+      // Show emergency overlay with full details to all receiving taxis
+      NotificationService.showEmergencyOverlay(
+        title: '🚨 Emergency Alert',
+        body: alertMessage,
+        taxiId: data['taxiId']?.toString(),
+        driverName: driverName?.toString(),
+        email: data['email']?.toString(),
+        taxiMatricule: data['taxiMatricule']?.toString(),
+        pictureUrl: data['pictureUrl']?.toString(),
+      );
     });
 
     // Listen for helpers on the way
