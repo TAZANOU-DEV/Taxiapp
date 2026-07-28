@@ -171,6 +171,14 @@ class _LoginPageState extends State<LoginPage> {
           await prefs.setString(
               'user_email', data['user']['email']?.toString() ?? email);
           await prefs.setString('taxi_id', taxiId);
+          final phone = user?['phone']?.toString() ?? '';
+          if (phone.isNotEmpty) {
+            await prefs.setString('user_phone', phone);
+          }
+          final profileImage = user?['profile_image']?.toString() ?? '';
+          if (profileImage.isNotEmpty) {
+            await prefs.setString('profile_image_url', profileImage);
+          }
           if (userId != null) {
             await prefs.setInt('user_id', userId);
           }

@@ -15,8 +15,11 @@ class SocketService {
   void connect() {
     const serverUrl = 'https://taxiapp-back.vercel.app';
     socket = IO.io(serverUrl, <String, dynamic>{
-      'transports': ['websocket'],
+      'transports': ['websocket', 'polling'],
       'autoConnect': false,
+      'reconnection': true,
+      'reconnectionAttempts': 5,
+      'reconnectionDelay': 1000,
     });
 
     socket.connect();
@@ -111,6 +114,7 @@ class SocketService {
         taxiId: data['taxiId']?.toString(),
         driverName: driverName?.toString(),
         email: data['email']?.toString(),
+        phone: data['phone']?.toString(),
         taxiMatricule: data['taxiMatricule']?.toString(),
         pictureUrl: data['pictureUrl']?.toString(),
       );
@@ -122,10 +126,12 @@ class SocketService {
       if (onHelpOnWayUpdate != null) {
         onHelpOnWayUpdate!(Map<String, dynamic>.from(data));
       }
-      final helperTaxiId = data['helperTaxiId'] as String? ?? 'A taxi';
+      final helperTaxiNumber = data['helperTaxiNumber'] as String? ??
+          data['helperTaxiId'] as String? ??
+          'A taxi';
       NotificationService.showNotification(
         title: 'Help Update',
-        body: 'Taxi $helperTaxiId is on the way',
+        body: 'Taxi $helperTaxiNumber is on the way',
         type: 'update',
       );
     });
@@ -213,6 +219,9 @@ class SocketService {
     String? taxiNumber,
     String? driverName,
     String? email,
+    String? phone,
+    String? taxiMatricule,
+    String? pictureUrl,
   }) {
     final payload = {
       'taxiId': taxiId,
@@ -223,6 +232,9 @@ class SocketService {
     if (taxiNumber != null) payload['taxiNumber'] = taxiNumber;
     if (driverName != null) payload['driverName'] = driverName;
     if (email != null) payload['email'] = email;
+    if (phone != null) payload['phone'] = phone;
+    if (taxiMatricule != null) payload['taxiMatricule'] = taxiMatricule;
+    if (pictureUrl != null) payload['pictureUrl'] = pictureUrl;
 
     socket.emit('emergency', payload);
     NotificationService.showNotification(
@@ -261,11 +273,23 @@ class SocketService {
     );
   }
 
-  void sendEmergencyCleared(String taxiId) {
-    socket.emit('emergency_cleared', {
+  void sendEmergencyCleared(
+    String taxiId, {
+    String? driverName,
+    String? taxiMatricule,
+    String? taxiNumber,
+    String? email,
+  }) {
+    final payload = {
       'taxiId': taxiId,
       'timestamp': DateTime.now().toIso8601String(),
-    });
+    };
+    if (driverName != null) payload['driverName'] = driverName;
+    if (taxiMatricule != null) payload['taxiMatricule'] = taxiMatricule;
+    if (taxiNumber != null) payload['taxiNumber'] = taxiNumber;
+    if (email != null) payload['email'] = email;
+
+    socket.emit('emergency_cleared', payload);
     NotificationService.showNotification(
       title: 'Emergency Cleared',
       body: 'You marked the emergency as resolved.',

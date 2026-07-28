@@ -13,6 +13,7 @@ class EmergencyNavigationPage extends StatefulWidget {
     required this.requesterName,
     required this.taxiId,
     this.message,
+    this.requesterPhone,
     super.key,
   });
 
@@ -21,6 +22,7 @@ class EmergencyNavigationPage extends StatefulWidget {
   final String requesterName;
   final String taxiId;
   final String? message;
+  final String? requesterPhone;
 
   @override
   State<EmergencyNavigationPage> createState() =>
@@ -146,9 +148,8 @@ class _EmergencyNavigationPageState extends State<EmergencyNavigationPage> {
         '${widget.responderLocation.latitude},${widget.responderLocation.longitude}';
     final destination =
         '${widget.emergencyLocation.latitude},${widget.emergencyLocation.longitude}';
-    final navigationUri = Uri(
-      scheme: 'google.navigation',
-      queryParameters: {'q': destination, 'mode': 'd'},
+    final navigationUri = Uri.parse(
+      'google.navigation:q=$destination&mode=d',
     );
     final directionsUri = Uri.https(
       'www.google.com',
@@ -178,6 +179,27 @@ class _EmergencyNavigationPageState extends State<EmergencyNavigationPage> {
     }
   }
 
+  Future<void> _callRequester() async {
+    final phone = widget.requesterPhone;
+    if (phone == null || phone.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No phone number available.')),
+        );
+      }
+      return;
+    }
+
+    final telUri = Uri(scheme: 'tel', path: phone);
+    final opened =
+        await launchUrl(telUri, mode: LaunchMode.externalApplication);
+    if (!opened && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Unable to open the phone app.')),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final center = LatLng(
@@ -200,7 +222,8 @@ class _EmergencyNavigationPageState extends State<EmergencyNavigationPage> {
             ),
             children: [
               TileLayer(
-                urlTemplate: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+                urlTemplate:
+                    'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
                 subdomains: const ['a', 'b', 'c'],
                 userAgentPackageName: 'com.example.taxi_app',
               ),
@@ -321,14 +344,26 @@ class _EmergencyNavigationPageState extends State<EmergencyNavigationPage> {
                     if (_isLoadingRoute)
                       const LinearProgressIndicator(color: Color(0xFF512DA8))
                     else
-                      Text(
-                        '${_formatDuration()} • ${_formatDistance()}',
-                        style: const TextStyle(
-                          fontSize: 22,
-                          fontWeight: FontWeight.bold,
-                        ),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '${_formatDuration()} • ${_formatDistance()}',
+                            style: const TextStyle(
+                              fontSize: 22,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Route from your location to ${widget.taxiId}',
+                            style: const TextStyle(
+                                color: Colors.black45, fontSize: 14),
+                          ),
+                        ],
                       ),
-                    if (widget.message != null && widget.message!.isNotEmpty) ...[
+                    if (widget.message != null &&
+                        widget.message!.isNotEmpty) ...[
                       const SizedBox(height: 6),
                       Text(
                         widget.message!,
@@ -337,23 +372,65 @@ class _EmergencyNavigationPageState extends State<EmergencyNavigationPage> {
                         style: const TextStyle(color: Colors.black54),
                       ),
                     ],
+                    if (widget.requesterPhone != null &&
+                        widget.requesterPhone!.isNotEmpty) ...[
+                      const SizedBox(height: 10),
+                      Row(
+                        children: [
+                          const Icon(Icons.phone,
+                              size: 16, color: Colors.black54),
+                          const SizedBox(width: 6),
+                          Text(
+                            widget.requesterPhone!,
+                            style: const TextStyle(color: Colors.black54),
+                          ),
+                        ],
+                      ),
+                    ],
                     const SizedBox(height: 14),
-                    SizedBox(
-                      width: double.infinity,
-                      child: ElevatedButton.icon(
-                        onPressed: _openGoogleMaps,
-                        icon: const Icon(Icons.navigation),
-                        label: const Text('Start navigation'),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF00796B),
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                          textStyle: const TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
+                    Row(
+                      children: [
+                        if (widget.requesterPhone != null &&
+                            widget.requesterPhone!.isNotEmpty)
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: _callRequester,
+                              icon: const Icon(Icons.phone),
+                              label: const Text('Call'),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: const Color(0xFF00796B),
+                                side:
+                                    const BorderSide(color: Color(0xFF00796B)),
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 14),
+                                textStyle: const TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                          ),
+                        if (widget.requesterPhone != null &&
+                            widget.requesterPhone!.isNotEmpty)
+                          const SizedBox(width: 12),
+                        Expanded(
+                          flex: 2,
+                          child: ElevatedButton.icon(
+                            onPressed: _openGoogleMaps,
+                            icon: const Icon(Icons.navigation),
+                            label: const Text('Start navigation'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF00796B),
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(vertical: 14),
+                              textStyle: const TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
                           ),
                         ),
-                      ),
+                      ],
                     ),
                   ],
                 ),

@@ -52,11 +52,12 @@ router.get(
         d.email,
         d.taxi_matricule,
         t.driver_name AS taxi_driver_name,
-        t.phone AS taxi_phone
+        t.phone AS taxi_phone,
+        t.license_plate AS taxi_license_plate
       FROM emergency_alerts e
       LEFT JOIN drivers d ON d.driver_id = e.driver_id
       LEFT JOIN taxis t ON t.taxi_id = e.taxi_id
-    `;
+     `;
 
     if (where.length > 0) {
       sql += ` WHERE ${where.join(' AND ')}`;

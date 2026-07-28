@@ -31,7 +31,10 @@ class _HomePageState extends State<HomePage> {
   int _selectedIndex = 0;
   String userName = 'John Doe';
   String taxId = 'Unknown';
+  String userMatricule = '';
   String userEmail = '';
+  String userPhone = '';
+  String userProfileImageUrl = '';
   int? userId;
   bool isOnline = true;
   bool isInDanger = false;
@@ -47,9 +50,27 @@ class _HomePageState extends State<HomePage> {
   String? activeEmergencyRequesterName;
   LatLng? emergencyLocation;
   Map<String, dynamic>? emergencyDetails;
+  double? _emergencyDistance;
+  double? _emergencyDuration;
   final Set<String> helpersOnWay = {};
+
+// Track each helper's location (lat,lng) and route polyline
+  final Map<String, LatLng> _helperLocations = {};
+  final Map<String, List<LatLng>> _helperPolylines = {};
+  // Track helper display names (matricules)
+  final Map<String, String> _helperNames = {};
   final Map<String, Set<String>> helpersByRequest =
       {}; // track helpers per requesting taxi
+
+  // Track nearby taxi matricules for display
+  final Map<String, String> _nearbyTaxiMatricules = {};
+  // Track polylines to nearby taxis (for location sharing route visualization)
+  final Map<String, List<LatLng>> _nearbyTaxiPolylines = {};
+  final bool _showLocationPolylines = false;
+
+  // Polling fallback for emergency alerts (Vercel serverless doesn't support Socket.io WebSocket)
+  final Set<int> _processedEmergencyAlertIds = {};
+  Timer? _emergencyPollTimer;
 
   final MapController _mapController = MapController();
   List<Marker> _markers = [];
@@ -86,6 +107,7 @@ class _HomePageState extends State<HomePage> {
       final prefs = await SharedPreferences.getInstance();
       final token = prefs.getString('token');
 
+      final displayLabel = userMatricule.isNotEmpty ? userMatricule : taxId;
       final response = await http.post(
         Uri.parse('$backendBaseUrl/api/taxi/emergency'),
         headers: {
@@ -96,10 +118,13 @@ class _HomePageState extends State<HomePage> {
           'taxiId': taxId,
           'lat': currentPosition?.latitude,
           'lng': currentPosition?.longitude,
-          'message': 'Emergency alert from taxi $taxId',
+          'message': 'Emergency alert from taxi $displayLabel',
           'taxiNumber': taxId,
+          'taxiMatricule': userMatricule,
           'driverName': userName,
           'email': userEmail,
+          'phone': userPhone,
+          'pictureUrl': userProfileImageUrl,
         }),
       );
 
@@ -220,6 +245,55 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
+  /// Polling fallback for emergency alerts.
+  /// Since Vercel serverless functions don't support persistent Socket.io WebSocket
+  /// connections, this method periodically fetches pending emergency alerts from
+  /// the backend via HTTP and triggers the same handler as the socket listener.
+  Future<void> _pollEmergencyAlerts() async {
+    try {
+      final response = await http.get(
+        Uri.parse(
+            '$backendBaseUrl/api/emergency-alerts?status=pending&limit=50'),
+      );
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['success'] == true) {
+          final alerts = data['alerts'] as List<dynamic>? ?? [];
+          for (final alert in alerts) {
+            final alertId = alert['alert_id'];
+            if (alertId == null) continue;
+            if (_processedEmergencyAlertIds.contains(alertId)) continue;
+
+            final alertTaxiId = alert['taxi_id']?.toString();
+            if (alertTaxiId == null || alertTaxiId == taxId) continue;
+
+            _processedEmergencyAlertIds.add(alertId);
+
+            // Trigger the same handler as the socket listener
+            if (socketService.onEmergencyAlert != null) {
+              socketService.onEmergencyAlert!(Map<String, dynamic>.from({
+                'taxiId': alertTaxiId,
+                'taxiNumber': alert['taxi_license_plate'] ?? alertTaxiId,
+                'driverName': alert['taxi_driver_name'] ??
+                    alert['full_name'] ??
+                    'Unknown',
+                'email': alert['email'] ?? '',
+                'phone': alert['taxi_phone'] ?? '',
+                'taxiMatricule': alert['taxi_matricule'] ?? '',
+                'pictureUrl': '',
+                'message': alert['message'] ?? '',
+                'lat': alert['latitude'],
+                'lng': alert['longitude'],
+              }));
+            }
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('Error polling emergency alerts: $e');
+    }
+  }
+
   // Decode encoded polyline (precision 5) from OSRM/Mapbox into List<LatLng>
   List<LatLng> _decodePolyline(String encoded) {
     List<LatLng> poly = [];
@@ -267,14 +341,17 @@ class _HomePageState extends State<HomePage> {
       if (resp.statusCode == 200) {
         final body = jsonDecode(resp.body);
         if (body['routes'] != null && body['routes'].isNotEmpty) {
-          final geometry = body['routes'][0]['geometry'] as String;
+          final route = body['routes'][0];
+          final geometry = route['geometry'] as String;
           final points = _decodePolyline(geometry);
           setState(() {
+            _emergencyDistance = (route['distance'] as num?)?.toDouble();
+            _emergencyDuration = (route['duration'] as num?)?.toDouble();
             _polylines = [
               Polyline(
                 points: points,
-                strokeWidth: 5.0,
-                color: Colors.yellow,
+                strokeWidth: 6.0,
+                color: Colors.blueAccent,
               ),
             ];
           });
@@ -283,26 +360,111 @@ class _HomePageState extends State<HomePage> {
       }
       // Fallback to straight line if routing failed
       setState(() {
+        _emergencyDistance = null;
+        _emergencyDuration = null;
         _polylines = [
           Polyline(
             points: [from, to],
-            strokeWidth: 5.0,
-            color: Colors.yellow,
+            strokeWidth: 4.0,
+            color: Colors.redAccent.withOpacity(0.5),
           ),
         ];
       });
     } catch (e) {
       debugPrint('Failed to fetch route: $e');
       setState(() {
+        _emergencyDistance = null;
+        _emergencyDuration = null;
         _polylines = [
           Polyline(
             points: [from, to],
-            strokeWidth: 5.0,
-            color: Colors.yellow,
+            strokeWidth: 4.0,
+            color: Colors.redAccent.withOpacity(0.5),
           ),
         ];
       });
     }
+  }
+
+// Fetch route to a nearby taxi (for location sharing polyline visualization)
+  Future<void> _fetchLocationRoute(
+      String taxiKey, LatLng from, LatLng to) async {
+    try {
+      final url = Uri.parse(
+          'https://router.project-osrm.org/route/v1/driving/${from.longitude},${from.latitude};${to.longitude},${to.latitude}?overview=full&geometries=polyline');
+      final resp = await http.get(url);
+      if (resp.statusCode == 200) {
+        final body = jsonDecode(resp.body);
+        if (body['routes'] != null && body['routes'].isNotEmpty) {
+          final route = body['routes'][0];
+          final geometry = route['geometry'] as String;
+          final points = _decodePolyline(geometry);
+          setState(() {
+            _nearbyTaxiPolylines[taxiKey] = points;
+          });
+          _buildMapMarkers();
+          return;
+        }
+      }
+      // Fallback to straight line
+      setState(() {
+        _nearbyTaxiPolylines[taxiKey] = [from, to];
+      });
+      _buildMapMarkers();
+    } catch (e) {
+      debugPrint('Failed to fetch location route: $e');
+      setState(() {
+        _nearbyTaxiPolylines[taxiKey] = [from, to];
+      });
+      _buildMapMarkers();
+    }
+  }
+
+  // Fetch route for a specific helper and store the polyline (for requester view)
+  Future<void> _fetchHelperRoute(
+      String helperKey, LatLng from, LatLng to) async {
+    try {
+      final url = Uri.parse(
+          'https://router.project-osrm.org/route/v1/driving/${from.longitude},${from.latitude};${to.longitude},${to.latitude}?overview=full&geometries=polyline');
+      final resp = await http.get(url);
+      if (resp.statusCode == 200) {
+        final body = jsonDecode(resp.body);
+        if (body['routes'] != null && body['routes'].isNotEmpty) {
+          final route = body['routes'][0];
+          final geometry = route['geometry'] as String;
+          final points = _decodePolyline(geometry);
+          setState(() {
+            _helperPolylines[helperKey] = points;
+          });
+          _buildMapMarkers();
+          return;
+        }
+      }
+      // Fallback to straight line
+      setState(() {
+        _helperPolylines[helperKey] = [from, to];
+      });
+      _buildMapMarkers();
+    } catch (e) {
+      debugPrint('Failed to fetch helper route: $e');
+      setState(() {
+        _helperPolylines[helperKey] = [from, to];
+      });
+      _buildMapMarkers();
+    }
+  }
+
+  String _formatEmergencyDistance() {
+    if (_emergencyDistance == null) return '';
+    if (_emergencyDistance! < 1000) return '${_emergencyDistance!.round()} m';
+    return '${(_emergencyDistance! / 1000).toStringAsFixed(1)} km';
+  }
+
+  String _formatEmergencyDuration() {
+    if (_emergencyDuration == null) return '';
+    final minutes = (_emergencyDuration! / 60).round();
+    if (minutes < 60) return '$minutes min';
+    return '${minutes ~/ 60}h ${minutes % 60}m';
   }
 
   void _startLocationSharing() {
@@ -389,19 +551,67 @@ class _HomePageState extends State<HomePage> {
           point: emergencyLocation!,
           width: 80,
           height: 80,
-          child: const Icon(
-            Icons.warning,
-            color: Colors.redAccent,
-            size: 40,
+          child: GestureDetector(
+            onTap: _openEmergencyNavigation,
+            child: const Icon(
+              Icons.warning,
+              color: Colors.redAccent,
+              size: 40,
+            ),
           ),
         ),
       );
     }
 
+    // Add helper markers on the map (visible to everyone - requester and other helpers)
+    _helperLocations.forEach((helperId, helperLatLng) {
+      final displayName = _helperNames[helperId] ?? helperId;
+      markers.add(
+        Marker(
+          point: helperLatLng,
+          width: 80,
+          height: 80,
+          child: const Icon(
+            Icons.directions_car,
+            color: Colors.green,
+            size: 40,
+          ),
+        ),
+      );
+    });
+
     setState(() {
       _markers = markers;
       _polylines = [];
     });
+
+    // Build polylines from stored helper polylines (for requester to see)
+    if (activeEmergencyRequesterId == taxId && _helperPolylines.isNotEmpty) {
+      final List<Polyline> helperPolylines = [];
+      int colorIndex = 0;
+      final List<Color> polylineColors = [
+        Colors.deepOrange,
+        Colors.blueAccent,
+        Colors.purple,
+        Colors.teal,
+        Colors.amber,
+        Colors.indigo,
+      ];
+      _helperPolylines.forEach((helperId, points) {
+        final displayName = _helperNames[helperId] ?? helperId;
+        helperPolylines.add(
+          Polyline(
+            points: points,
+            strokeWidth: 5.0,
+            color: polylineColors[colorIndex % polylineColors.length],
+          ),
+        );
+        colorIndex++;
+      });
+      setState(() {
+        _polylines = helperPolylines;
+      });
+    }
 
     // If there's an active emergency (not by this taxi), try to fetch a real route
     if (activeEmergencyRequesterId != null &&
@@ -428,9 +638,51 @@ class _HomePageState extends State<HomePage> {
     setState(() {
       userName = widget.userName ?? prefs.getString('user_name') ?? 'John Doe';
       taxId = widget.taxiId ?? prefs.getString('taxi_id') ?? 'Unknown';
+      userMatricule = prefs.getString('user_matricule') ?? taxId;
       userEmail = prefs.getString('user_email') ?? '';
+      userPhone = prefs.getString('user_phone') ?? '';
+      userProfileImageUrl = prefs.getString('profile_image_url') ?? '';
       userId = prefs.getInt('user_id');
     });
+
+    // Fetch the latest profile (phone, profile image) from the backend
+    _fetchUserProfile();
+  }
+
+  Future<void> _fetchUserProfile() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString('token');
+      if (token == null) return;
+
+      final response = await http.get(
+        Uri.parse('$backendBaseUrl/api/auth/profile'),
+        headers: {'Authorization': 'Bearer $token'},
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['success'] == true && data['user'] != null) {
+          final user = data['user'] as Map<String, dynamic>;
+          final phone = user['phone']?.toString() ?? '';
+          final profileImage = user['profile_image']?.toString() ?? '';
+
+          if (phone.isNotEmpty) {
+            await prefs.setString('user_phone', phone);
+          }
+          if (profileImage.isNotEmpty) {
+            await prefs.setString('profile_image_url', profileImage);
+          }
+
+          setState(() {
+            if (phone.isNotEmpty) userPhone = phone;
+            if (profileImage.isNotEmpty) userProfileImageUrl = profileImage;
+          });
+        }
+      }
+    } catch (e) {
+      debugPrint('Error fetching user profile: $e');
+    }
   }
 
   void _setupSocketListeners() {
@@ -515,6 +767,7 @@ class _HomePageState extends State<HomePage> {
             'taxiNumber': data['taxiNumber'] ?? incomingTaxiLabel,
             'driverName': data['driverName'] ?? 'Unknown',
             'email': data['email'] ?? '',
+            'phone': data['phone'] ?? '',
             'taxiMatricule': data['taxiMatricule'] ?? '',
             'pictureUrl': data['pictureUrl'] ?? '',
             'message': data['message'] ?? '',
@@ -522,6 +775,14 @@ class _HomePageState extends State<HomePage> {
 
           if (emergencyLat != null && emergencyLng != null) {
             emergencyLocation = LatLng(emergencyLat, emergencyLng);
+
+            // Automatically fetch route if we are not the one in danger
+            if (incomingTaxiId != taxId && currentPosition != null) {
+              _fetchRoute(
+                LatLng(currentPosition!.latitude, currentPosition!.longitude),
+                emergencyLocation!,
+              );
+            }
           }
 
           // populate current helper set for this request if known
@@ -542,18 +803,29 @@ class _HomePageState extends State<HomePage> {
     socketService.onHelpOnWayUpdate = (data) {
       final requestingTaxiId = data['requestingTaxiId'] as String?;
       final helperTaxiId = data['helperTaxiId'] as String?;
-      final helperTaxiLabel = helperTaxiId ?? 'Unknown taxi';
+      final helperTaxiNumber =
+          data['helperTaxiNumber'] as String? ?? helperTaxiId ?? 'Unknown taxi';
+      final helperLat =
+          data['lat'] is num ? (data['lat'] as num).toDouble() : null;
+      final helperLng =
+          data['lng'] is num ? (data['lng'] as num).toDouble() : null;
 
       if (requestingTaxiId != null && helperTaxiId != null) {
-        // record helper for that request
+        // record helper for that request (store the taxi number for display)
         helpersByRequest.putIfAbsent(requestingTaxiId, () => <String>{});
-        helpersByRequest[requestingTaxiId]!.add(helperTaxiId);
+        helpersByRequest[requestingTaxiId]!.add(helperTaxiNumber);
+
+        // Store helper location and name for map display
+        if (helperLat != null && helperLng != null) {
+          _helperLocations[helperTaxiId] = LatLng(helperLat, helperLng);
+          _helperNames[helperTaxiId] = helperTaxiNumber;
+        }
       }
 
       setState(() {
         // if current user is the request owner, update visible helper set
         if (requestingTaxiId == taxId) {
-          if (helperTaxiId != null) helpersOnWay.add(helperTaxiId);
+          helpersOnWay.add(helperTaxiNumber);
         }
 
         // if current UI is showing a particular active requester, keep the helpers list in sync
@@ -575,15 +847,25 @@ class _HomePageState extends State<HomePage> {
           );
         }
 
+// If current user is the requester (in danger), fetch route for each helper
+        if (requestingTaxiId == taxId &&
+            helperLat != null &&
+            helperLng != null &&
+            emergencyLocation != null &&
+            helperTaxiId != null) {
+          _fetchHelperRoute(
+              helperTaxiId, LatLng(helperLat, helperLng), emergencyLocation!);
+        }
+
         activities.insert(0, {
-          "title": "$helperTaxiLabel is coming to help",
+          "title": "Taxi $helperTaxiNumber is coming to help",
           "time": _currentActivityTime(),
         });
       });
 
       NotificationService.showNotification(
         title: 'Taxi Help Update',
-        body: '$helperTaxiLabel is on the way',
+        body: 'Taxi $helperTaxiNumber is on the way',
         type: 'update',
       );
     };
@@ -603,6 +885,8 @@ class _HomePageState extends State<HomePage> {
           activeEmergencyRequesterName = null;
           emergencyLocation = null;
           emergencyDetails = null;
+          _emergencyDistance = null;
+          _emergencyDuration = null;
           helpersOnWay.clear();
           _polylines.clear();
         }
@@ -632,10 +916,11 @@ class _HomePageState extends State<HomePage> {
   }
 
   void sendEmergencyAlert() {
+    final displayLabel = userMatricule.isNotEmpty ? userMatricule : taxId;
     setState(() {
       isInDanger = true;
       activeEmergencyRequesterId = taxId;
-      activeEmergencyRequesterName = taxId;
+      activeEmergencyRequesterName = displayLabel;
       helpersOnWay.clear();
       activities.insert(0, {
         "title": "Emergency alert sent",
@@ -648,10 +933,13 @@ class _HomePageState extends State<HomePage> {
       taxId,
       currentPosition?.latitude ?? 0,
       currentPosition?.longitude ?? 0,
-      'Help! My taxi ${taxId} needs assistance.',
-      taxiNumber: taxId,
+      'Help! My taxi $displayLabel needs assistance.',
+      taxiNumber: displayLabel,
       driverName: userName,
       email: userEmail,
+      phone: userPhone,
+      taxiMatricule: userMatricule,
+      pictureUrl: userProfileImageUrl,
     );
 
     ScaffoldMessenger.of(context).showSnackBar(
@@ -663,7 +951,16 @@ class _HomePageState extends State<HomePage> {
   }
 
   void stopEmergencyAlert() {
-    socketService.sendEmergencyCleared(taxId);
+    // Stop location sharing so the driver is no longer tracked on the map
+    _stopLocationSharing();
+
+    socketService.sendEmergencyCleared(
+      taxId,
+      driverName: userName,
+      taxiMatricule: userMatricule,
+      taxiNumber: userMatricule.isNotEmpty ? userMatricule : taxId,
+      email: userEmail,
+    );
 
     setState(() {
       isInDanger = false;
@@ -671,18 +968,21 @@ class _HomePageState extends State<HomePage> {
       activeEmergencyRequesterName = null;
       emergencyLocation = null;
       emergencyDetails = null;
+      _emergencyDistance = null;
+      _emergencyDuration = null;
       helpersOnWay.clear();
       _polylines.clear();
       activities.insert(0, {
-        "title": "Emergency alert stopped",
+        "title": "Emergency alert stopped - You are now safe",
         "time": _currentActivityTime(),
       });
     });
 
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
-        content: Text("Emergency alert stopped"),
+        content: Text("✅ Emergency alert stopped — You are safe now. All nearby vehicles have been notified."),
         backgroundColor: Colors.green,
+        duration: Duration(seconds: 4),
       ),
     );
   }
@@ -748,15 +1048,34 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  void _openEmergencyNavigation() {
-    if (emergencyLocation == null || currentPosition == null) {
+  Future<void> _openEmergencyNavigation() async {
+    if (emergencyLocation == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Current and emergency locations are required.'),
+          content: Text('Emergency location is not available.'),
           backgroundColor: Colors.orange,
         ),
       );
       return;
+    }
+
+    if (currentPosition == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Acquiring your location...'),
+        ),
+      );
+      await _getCurrentLocation();
+      if (currentPosition == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(locationError ??
+                'Unable to acquire your location. Enable GPS and try again.'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+        return;
+      }
     }
 
     Navigator.of(context).push(
@@ -772,6 +1091,7 @@ class _HomePageState extends State<HomePage> {
               activeEmergencyRequesterId ??
               'Unknown taxi',
           message: emergencyDetails?['message']?.toString(),
+          requesterPhone: emergencyDetails?['phone']?.toString(),
         ),
       ),
     );
@@ -783,6 +1103,11 @@ class _HomePageState extends State<HomePage> {
     _loadSavedUserProfile();
     socketService.connect();
     _setupSocketListeners();
+
+    // Start polling for emergency alerts (fallback for Vercel serverless)
+    _emergencyPollTimer = Timer.periodic(const Duration(seconds: 5), (timer) {
+      _pollEmergencyAlerts();
+    });
 
     // Get current location first
     _getCurrentLocation().then((_) {
@@ -808,6 +1133,7 @@ class _HomePageState extends State<HomePage> {
   void dispose() {
     socketService.socket.dispose();
     locationTimer?.cancel();
+    _emergencyPollTimer?.cancel();
     super.dispose();
   }
 
@@ -870,7 +1196,7 @@ class _HomePageState extends State<HomePage> {
     return Column(
       children: [
         Expanded(
-          flex: 5,
+          flex: 2,
           child: Stack(
             children: [
               Positioned.fill(
@@ -932,19 +1258,6 @@ class _HomePageState extends State<HomePage> {
                           Text(
                             locationError!,
                             textAlign: TextAlign.center,
-                            style: const TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.bold,
-                                fontSize: 16),
-                          ),
-                          const SizedBox(height: 24),
-                          ElevatedButton(
-                            onPressed: _getCurrentLocation,
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.yellow,
-                            ),
-                            child: const Text('Retry',
-                                style: TextStyle(color: Colors.black)),
                           ),
                         ],
                       ),
@@ -955,14 +1268,12 @@ class _HomePageState extends State<HomePage> {
           ),
         ),
         Expanded(
-          flex: 5,
+          flex: 3,
           child: SingleChildScrollView(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _profileCard(),
-                const SizedBox(height: 14),
+                const SizedBox(height: 12),
                 _emergencyButton(),
                 const SizedBox(height: 12),
                 _helpOnWayButton(),
@@ -1029,6 +1340,7 @@ class _HomePageState extends State<HomePage> {
                 _activityHistory(),
                 const SizedBox(height: 16),
                 _nearbyTaxisSection(),
+                const SizedBox(height: 16),
               ],
             ),
           ),
@@ -1063,7 +1375,7 @@ class _HomePageState extends State<HomePage> {
                     ),
                   ),
                   Text(
-                    "Tax ID: $taxId",
+                    "Matricule: $userMatricule",
                     style: const TextStyle(color: Colors.white70),
                   ),
                   Text(
@@ -1241,9 +1553,12 @@ class _HomePageState extends State<HomePage> {
     final bool isRequester = activeEmergencyRequesterId == taxId;
     final String title =
         isRequester ? 'Emergency request sent' : 'Emergency alert received';
+    final String timeDist = !isRequester && _emergencyDistance != null
+        ? ' • ${_formatEmergencyDuration()} (${_formatEmergencyDistance()})'
+        : '';
     final String subtitle = isRequester
         ? 'Your alert is active. Waiting for drivers to respond.'
-        : 'Taxi ${activeEmergencyRequesterName ?? activeEmergencyRequesterId} needs help.';
+        : 'Taxi ${activeEmergencyRequesterName ?? activeEmergencyRequesterId} needs help$timeDist.';
 
     return Container(
       width: double.infinity,
@@ -1330,6 +1645,11 @@ class _HomePageState extends State<HomePage> {
                         const SizedBox(height: 4),
                         Text(
                           'Email: ${emergencyDetails!['email'] ?? '-'}',
+                          style: const TextStyle(color: Colors.white70),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Phone: ${emergencyDetails!['phone'] ?? '-'}',
                           style: const TextStyle(color: Colors.white70),
                         ),
                         const SizedBox(height: 4),
@@ -1532,11 +1852,11 @@ class _HomePageState extends State<HomePage> {
               (taxi) => ListTile(
                 leading: const Icon(Icons.local_taxi, color: Colors.yellow),
                 title: Text(
-                  "Taxi ID: ${taxi['taxi_id']}",
+                  "Matricule: ${taxi['license_plate'] ?? taxi['taxi_id']}",
                   style: const TextStyle(color: Colors.white),
                 ),
                 subtitle: Text(
-                  "Lat: ${taxi['lat']}, Lng: ${taxi['lng']}",
+                  "Driver: ${taxi['driver_name'] ?? 'Unknown'} • Lat: ${taxi['lat']}, Lng: ${taxi['lng']}",
                   style: const TextStyle(color: Colors.white70),
                 ),
               ),

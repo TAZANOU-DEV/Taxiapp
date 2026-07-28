@@ -458,7 +458,7 @@ router.post('/login', async (req, res) => {
     }
 
     const [users] = await db.query(
-      'SELECT id, username, email, password_hash, role, is_active FROM users WHERE email = ?',
+      'SELECT id, username, email, password_hash, role, is_active, phone, profile_image FROM users WHERE email = ?',
       [normalizedEmail]
     );
 
@@ -503,6 +503,12 @@ router.post('/login', async (req, res) => {
       { expiresIn: '24h' }
     );
 
+    const profileImage = user.profile_image
+      ? (user.profile_image.startsWith('http')
+          ? user.profile_image
+          : `${process.env.BACKEND_URL || 'https://taxiapp-back.vercel.app'}${user.profile_image}`)
+      : null;
+
     res.json({
       success: true,
       token,
@@ -512,6 +518,8 @@ router.post('/login', async (req, res) => {
         email: user.email,
         role: user.role,
         taxiId,
+        phone: user.phone || null,
+        profile_image: profileImage,
       }
     });
   } catch (error) {
@@ -524,7 +532,7 @@ router.post('/login', async (req, res) => {
 router.get('/profile', authenticateToken, async (req, res) => {
   try {
     const [users] = await db.query(
-      'SELECT id, username, email, role, created_at FROM users WHERE id = ?',
+      'SELECT id, username, email, role, phone, profile_image, created_at FROM users WHERE id = ?',
       [req.user.id]
     );
 
@@ -532,7 +540,20 @@ router.get('/profile', authenticateToken, async (req, res) => {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    res.json({ success: true, user: users[0] });
+    const user = users[0];
+    const profileImage = user.profile_image
+      ? (user.profile_image.startsWith('http')
+          ? user.profile_image
+          : `${process.env.BACKEND_URL || 'https://taxiapp-back.vercel.app'}${user.profile_image}`)
+      : null;
+
+    res.json({
+      success: true,
+      user: {
+        ...user,
+        profile_image: profileImage,
+      },
+    });
   } catch (error) {
     console.error('Profile fetch error:', error);
     res.status(500).json({ error: 'Internal server error' });

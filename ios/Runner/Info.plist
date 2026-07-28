@@ -45,5 +45,13 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>googlemaps</string>
+		<string>google.navigation</string>
+		<string>comgooglemaps</string>
+		<string>tel</string>
+		<string>maps</string>
+	</array>
 </dict>
 </plist>

@@ -131,6 +131,7 @@ class NotificationService {
     String? taxiId,
     String? driverName,
     String? email,
+    String? phone,
     String? taxiMatricule,
     String? pictureUrl,
   }) {
@@ -263,6 +264,14 @@ class NotificationService {
                         if (email != null && email.isNotEmpty)
                           Text(
                             'Email: $email',
+                            style: const TextStyle(
+                              color: Colors.white70,
+                              fontSize: 14,
+                            ),
+                          ),
+                        if (phone != null && phone.isNotEmpty)
+                          Text(
+                            'Phone: $phone',
                             style: const TextStyle(
                               color: Colors.white70,
                               fontSize: 14,

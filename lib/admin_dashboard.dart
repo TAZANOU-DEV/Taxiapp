@@ -347,6 +347,18 @@ class _AdminDashboardState extends State<AdminDashboard> {
     }
   }
 
+  /// Opens Google Maps with turn-by-turn navigation to the given coordinates.
+  Future<void> _openGoogleMapsNavigation(double destLat, double destLng) async {
+    final Uri googleMapsUri = Uri.parse(
+      'https://www.google.com/maps/dir/?api=1&destination=$destLat,$destLng&travelmode=driving',
+    );
+    if (await canLaunchUrl(googleMapsUri)) {
+      await launchUrl(googleMapsUri, mode: LaunchMode.externalApplication);
+    } else {
+      _showSnackBar('Could not launch Google Maps');
+    }
+  }
+
   Future<void> _updateOrderStatus(int orderId, String status) async {
     final headers = await _authHeaders();
     if (headers.isEmpty) return;
@@ -1821,6 +1833,38 @@ class _AdminDashboardState extends State<AdminDashboard> {
               _buildDetailRow('Location',
                   '${emergency['latitude'] ?? emergency['lat'] ?? 'N/A'}, ${emergency['longitude'] ?? emergency['lng'] ?? 'N/A'}'),
               _buildDetailRow('Created at', createdAt),
+              if ((emergency['latitude'] ?? emergency['lat']) != null &&
+                  (emergency['longitude'] ?? emergency['lng']) != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: () => _openGoogleMapsNavigation(
+                        (emergency['latitude'] ?? emergency['lat']) is num
+                            ? (emergency['latitude'] ?? emergency['lat'])
+                                .toDouble()
+                            : double.tryParse(
+                                    (emergency['latitude'] ?? emergency['lat'])
+                                        .toString()) ??
+                                0.0,
+                        (emergency['longitude'] ?? emergency['lng']) is num
+                            ? (emergency['longitude'] ?? emergency['lng'])
+                                .toDouble()
+                            : double.tryParse(
+                                    (emergency['longitude'] ?? emergency['lng'])
+                                        .toString()) ??
+                                0.0,
+                      ),
+                      icon: const Icon(Icons.navigation, color: Colors.teal),
+                      label: const Text('Navigate to emergency',
+                          style: TextStyle(color: Colors.teal)),
+                      style: OutlinedButton.styleFrom(
+                        side: const BorderSide(color: Colors.teal),
+                      ),
+                    ),
+                  ),
+                ),
             ],
           ),
         ),

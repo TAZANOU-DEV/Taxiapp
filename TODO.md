@@ -1,11 +1,11 @@
-# Implementation Plan
+# Implementation Plan - Emergency Safety Enhancement
 
-## Goal: When a taxi presses emergency, notify all taxis with driver details (name, email, taxi matricule, picture)
-
-### Steps:
-- [x] 1. Create TODO.md
-- [ ] 2. Edit `backend/routes/taxiroutes.js` - Enhance HTTP emergency POST route to fetch & broadcast full driver info (email, taxi_matricule, profile_image)
-- [ ] 3. Edit `backend/server.js` - Enhance socket `emergency` handler to query DB for full driver details before broadcasting
-- [ ] 4. Edit `lib/home_page.dart` - Update emergency UI to display driver picture, name, email, taxi matricule
-- [ ] 5. Restart backend server
-
+## Steps:
+- [x] 1. Analyze codebase and create plan  
+- [x] 2. Confirm plan with user  
+- [ ] 3. **`lib/home_page.dart`** — Add `_stopLocationSharing()` in `stopEmergencyAlert()` so location stops broadcasting when emergency is cleared  
+- [ ] 4. **`lib/home_page.dart`** — Fix pictureUrl check in `_emergencyAlertCard()` to handle empty string  
+- [ ] 5. **`lib/home_page.dart`** — Add SnackBar notification for receiving taxis when emergency is cleared  
+- [ ] 6. **`lib/notification.dart`** — Ensure `showEmergencyOverlay()` properly shows taxiMatricule  
+- [ ] 7. **`lib/socket_service.dart`** — Ensure `sendEmergencyCleared` includes detailed message for notification  
+- [ ] 8. Verify all changes compile correctly

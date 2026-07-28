@@ -421,23 +421,39 @@ io.on('connection', (socket) => {
         message = 'Help is on the way',
       } = data;
 
-      await db.query(`
-        INSERT INTO activities (taxi_id, title, description, type)
-        VALUES (?, ?, ?, 'order')
-      `, [helperTaxiId, '🚕 Help on the way', message]);
+       // Fetch helper taxi license plate for display instead of raw ID
+       let helperTaxiNumber = helperTaxiId;
+       try {
+         const [taxiResults] = await db.query(
+           'SELECT license_plate FROM taxis WHERE taxi_id = ?',
+           [helperTaxiId]
+         );
+         if (taxiResults && taxiResults.length > 0 && taxiResults[0].license_plate) {
+           helperTaxiNumber = taxiResults[0].license_plate;
+         }
+       } catch (e) {
+         console.warn('Helper taxi lookup failed (non-blocking):', e.message || e);
+       }
 
-      io.emit('help_on_way', {
-        requestingTaxiId,
-        helperTaxiId,
-        lat,
-        lng,
-        emergencyLat: emergencyLat || null,
-        emergencyLng: emergencyLng || null,
-        message,
-        timestamp: new Date(),
-      });
+       await db.query(`
+         INSERT INTO activities (taxi_id, title, description, type)
+         VALUES (?, ?, ?, 'order')
+       `, [helperTaxiId, '🚕 Help on the way', message]);
 
-      console.log(`🚕 Taxi ${helperTaxiId} is coming to help ${requestingTaxiId}`);
+       io.emit('help_on_way', {
+         requestingTaxiId,
+         helperTaxiId,
+         helperTaxiNumber,
+         lat,
+         lng,
+         emergencyLat: emergencyLat || null,
+         emergencyLng: emergencyLng || null,
+         message,
+         timestamp: new Date(),
+       });
+
+       console.log(`🚕 Taxi ${helperTaxiNumber} is coming to help ${requestingTaxiId}`);
+
     } catch (error) {
       console.error('❌ Error processing help_on_way:', error);
       socket.emit('error', { message: 'Failed to send help on way notification' });
